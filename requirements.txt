@@ -1,0 +1,22 @@
+# Core dependencies
+python-dotenv==1.0.0
+requests==2.31.0
+
+# Blockchain module
+aptos-sdk==0.5.1  # For interacting with Aptos blockchain
+
+# AI module
+transformers==4.36.2  # Hugging Face transformers for AI content generation
+torch==2.1.2  # PyTorch for AI models
+sentencepiece==0.1.99  # For tokenization
+
+# Social module
+discord.py==2.3.2  # For Discord bot integration
+
+# API Gateway
+fastapi==0.104.1  # For API endpoints
+uvicorn==0.24.0  # ASGI server for FastAPI
+pydantic==2.5.2  # Data validation
+
+# Testing
+pytest==7.4.3  # For unit testing 
