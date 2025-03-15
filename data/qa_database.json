@@ -1,0 +1,8 @@
+{
+  "what is aptos": "Aptos is a Layer 1 blockchain built with Move, focused on safety, reliability, and scalability.",
+  "how do i create a wallet": "You can create an Aptos wallet using tools like Petra, Martian, or Pontem wallet. Visit their websites to download and follow the setup instructions.",
+  "what's the latest transaction volume": "I'll check the latest Aptos transaction volume for you from the blockchain data.",
+  "how do i mint an nft": "To mint an NFT on Aptos, you'll need to interact with a token contract. Most users use platforms like Topaz or BlueMove for a user-friendly experience.",
+  "what is move language": "Move is a programming language designed for secure resource management on blockchains. It powers Aptos and focuses on safety and verifiability.",
+  "how fast is aptos": "Aptos can process thousands of transactions per second (TPS) thanks to its parallel execution engine and Block-STM technology."
+}

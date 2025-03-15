@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aptos Blockchain Monitor</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <img src="https://aptoslabs.com/favicon.ico" alt="Aptos Logo">
+                <div class="logo-text">Aptos <span>Blockchain Monitor</span></div>
+            </div>
+            <div class="status-indicator">
+                <div id="status-dot" class="status-dot offline"></div>
+                <span id="status-text">Offline</span>
+            </div>
+        </header>
+        
+        <div class="dashboard">
+            <div class="panel metrics-panel">
+                <h2><i class="fas fa-chart-line"></i> System Metrics</h2>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-exchange-alt"></i></div>
+                        <div id="events-processed" class="metric-value">0</div>
+                        <div class="metric-label">Events Processed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-exclamation-circle"></i></div>
+                        <div id="significant-events" class="metric-value">0</div>
+                        <div class="metric-label">Significant Events</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-users"></i></div>
+                        <div id="monitored-accounts" class="metric-value">0</div>
+                        <div class="metric-label">Monitored Accounts</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fas fa-plug"></i></div>
+                        <div id="event-handles" class="metric-value">0</div>
+                        <div class="metric-label">Event Handles</div>
+                    </div>
+                </div>
+                <div class="uptime-container">
+                    <span><i class="fas fa-clock"></i> Uptime: <span id="uptime">00:00:00</span></span>
+                    <span><i class="fas fa-sync-alt"></i> Polling Interval: <span id="polling-interval">60</span> seconds</span>
+                </div>
+            </div>
+            
+            <div class="panel control-panel">
+                <h2><i class="fas fa-sliders-h"></i> Control Panel</h2>
+                <div class="control-buttons">
+                    <button id="start-btn" class="btn btn-success"><i class="fas fa-play"></i> Start Monitoring</button>
+                    <button id="stop-btn" class="btn btn-danger" disabled><i class="fas fa-stop"></i> Stop Monitoring</button>
+                    <button id="refresh-btn" class="btn btn-info"><i class="fas fa-sync-alt"></i> Refresh Data</button>
+                </div>
+                <div class="interval-control">
+                    <label for="polling-interval-input">Polling Interval (seconds):</label>
+                    <div class="interval-input-group">
+                        <input type="number" id="polling-interval-input" min="10" value="60">
+                        <button id="set-interval-btn" class="btn btn-primary">Set</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="panel events-panel">
+                <h2><i class="fas fa-bell"></i> Blockchain Events</h2>
+                <div class="filter-controls">
+                    <div class="filter-group">
+                        <label for="event-type-filter">Event Type:</label>
+                        <select id="event-type-filter">
+                            <option value="all">All Events</option>
+                            <option value="deposit">Deposits</option>
+                            <option value="withdraw">Withdrawals</option>
+                            <option value="trade">Trades</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="account-filter">Account:</label>
+                        <select id="account-filter">
+                            <option value="all">All Accounts</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="time-filter">Time Range:</label>
+                        <select id="time-filter">
+                            <option value="all">All Time</option>
+                            <option value="hour">Last Hour</option>
+                            <option value="day">Last 24 Hours</option>
+                            <option value="week">Last Week</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="events-container" id="events-container">
+                    <div class="empty-state" id="empty-state">
+                        <i class="fas fa-search"></i>
+                        <p>No events detected yet. Start monitoring to see events.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>&copy; 2025 Aptos Blockchain Monitor | Powered by <a href="https://aptoslabs.com/" target="_blank">Aptos Labs</a></p>
+        </footer>
+    </div>
+    
+    <!-- Toast container for notifications -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <script src="app.js"></script>
+</body>
+</html>
