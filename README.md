@@ -1,101 +1,122 @@
-# Cultivate - Aptos Blockchain Social Manager
+# Aptos Blockchain Monitor
 
-Cultivate is an AI-powered social media manager for Aptos blockchain communities. It monitors blockchain events, analyzes them using AI, and posts conversational updates to Discord.
+A modern, real-time monitoring system for the Aptos blockchain with Discord integration and AI-powered event analysis.
+
+![Aptos Blockchain Monitor](https://aptoslabs.com/images/aptos-meta-image.jpg)
 
 ## Features
 
-- **Real-time Blockchain Monitoring**: Monitors Aptos blockchain events in real-time
-- **AI-Powered Analysis**: Uses AI to generate insights and conversational messages about blockchain events
-- **Selective Notifications**: Only sends notifications for events related to monitored accounts, tokens, or collections
-- **Discord Integration**: Posts updates to Discord with rich, conversational embeds
-- **User Management**: Allows users to manage which accounts, tokens, and collections they want to monitor
+- **Real-time Blockchain Monitoring**: Track events on the Aptos blockchain as they happen
+- **Discord Integration**: Receive notifications and interact with the monitor via Discord
+- **AI-Powered Analysis**: Intelligent event categorization and summarization
+- **Modern UI**: Sleek dark mode interface with responsive design
+- **Customizable Alerts**: Set up alerts for specific event types or accounts
+- **Event Filtering**: Filter events by type, account, and time range
+- **Meme Generation**: Automatic meme generation for significant blockchain events
 
-## Setup
+## Prerequisites
 
-1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Create a `.env` file with the required configuration (see `.env.example`)
-4. Run the application: `python main.py`
+- Python 3.8+
+- Discord Bot Token
+- Aptos Node Access
+- OpenAI API Key (for AI features)
 
-## Configuration
+## Installation
 
-Configure the application by setting the following environment variables in a `.env` file:
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/sivaratrisrinivas/hackathons/cultivate.git
+   cd cultivate
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Create a `.env` file based on the provided example:
+   ```bash
+   cp .env.example .env
+   ```
+
+4. Update the `.env` file with your configuration details:
+   ```
+   # Aptos Configuration
+   APTOS_NODE_URL=https://fullnode.mainnet.aptoslabs.com/v1
+   APTOS_WEBSOCKET_URL=wss://fullnode.mainnet.aptoslabs.com/v1/websocket
+   
+   # Discord Configuration
+   DISCORD_TOKEN=your_discord_token
+   DISCORD_CHANNEL_ID=your_channel_id
+   DISCORD_PREFIX=!
+   
+   # OpenAI Configuration
+   OPENAI_API_KEY=your_openai_api_key
+   
+   # Web Server Configuration
+   WEB_SERVER_HOST=0.0.0.0
+   WEB_SERVER_PORT=8000
+   ```
+
+## Usage
+
+1. Start the application:
+   ```bash
+   python main.py
+   ```
+
+2. Access the web dashboard:
+   ```
+   http://localhost:8000
+   ```
+
+3. Interact with the Discord bot using commands:
+   - `/monitor start` - Start monitoring
+   - `/monitor stop` - Stop monitoring
+   - `/status` - Check monitoring status
+   - `/events [type] [account] [limit]` - View recent events
+   - `/alert add [type] [account]` - Set up alerts
+   - `/alert list` - View alert configurations
+   - `/alert remove [id]` - Remove an alert
+   - `/help` - Display help message
+
+## Project Structure
 
 ```
-# Discord Configuration
-DISCORD_BOT_TOKEN=your_discord_bot_token
-DISCORD_CHANNEL_ID=your_discord_channel_id
-DISCORD_PREFIX=!
-
-# AI Configuration
-XAI_API_KEY=your_xai_api_key
-XAI_API_URL=https://api.x.ai/v1
-GROK_MODEL=grok-2-latest
-AI_TEMPERATURE=0.7
-
-# Blockchain Configuration
-APTOS_NODE_URL=https://fullnode.mainnet.aptoslabs.com/v1
-APTOS_NETWORK=mainnet
-POLLING_INTERVAL=60
-
-# Monitoring Configuration (comma-separated lists)
-MONITOR_ACCOUNTS=0x1,0x2,0x3
-MONITOR_TOKENS=TokenName1,TokenName2
-MONITOR_COLLECTIONS=CollectionName1,CollectionName2
+cultivate/
+├── api/                    # Web API and frontend
+│   ├── static/             # Static assets (HTML, CSS, JS)
+│   ├── app.py              # Flask application
+│   └── routes.py           # API routes
+├── modules/                # Core modules
+│   ├── ai_module.py        # AI integration
+│   ├── blockchain_monitor.py # Blockchain monitoring
+│   └── discord_bot.py      # Discord bot integration
+├── utils/                  # Utility functions
+│   ├── config.py           # Configuration management
+│   └── logger.py           # Logging setup
+├── .env.example            # Environment variables example
+├── main.py                 # Application entry point
+└── requirements.txt        # Python dependencies
 ```
 
-## Discord Commands
+## Deployment
 
-The Discord bot supports the following commands:
+The application can be deployed to cloud platforms like:
 
-- `!aptos` - Get information about Aptos blockchain
-- `!blockchain_info` - Get information about the blockchain monitor
-- `!monitor add|remove|list account|token|collection [value]` - Manage monitored items
-- `!bot_help` - Show help message
-- `!stats` - View current blockchain statistics
-- `!recent` - See recent significant events
-- `!campaign` - See active community campaigns
-- `!status` - Check the bot status
-- `!latest` - Get the latest blockchain events
-
-## Managing Monitored Items
-
-You can manage which accounts, tokens, and collections are monitored using the `!monitor` command:
-
-### List Monitored Items
-```
-!monitor list
-```
-
-### Add Items to Monitor
-```
-!monitor add account 0x123456789abcdef
-!monitor add token MyToken
-!monitor add collection MyCollection
-```
-
-### Remove Items from Monitoring
-```
-!monitor remove account 0x123456789abcdef
-!monitor remove token MyToken
-!monitor remove collection MyCollection
-```
-
-## How It Works
-
-1. The application connects to the Aptos blockchain and monitors events
-2. When an event is detected, it checks if it's related to any monitored accounts, tokens, or collections
-3. If it is, the event is analyzed using AI to generate insights
-4. A conversational message is created and posted to Discord
-5. Users can interact with the bot to manage monitored items and get information
-
-## Development
-
-- `modules/` - Core application modules
-- `api/` - API server
-- `utils/` - Utility functions
-- `tests/` - Unit tests
+- **Heroku**: Easy deployment with Procfile
+- **AWS**: Deploy using EC2 or ECS
+- **Google Cloud**: Deploy using App Engine or Cloud Run
+- **Digital Ocean**: Deploy using Droplets or App Platform
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Contact
+
+For questions or support, please open an issue or contact the repository owner.
