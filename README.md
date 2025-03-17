@@ -183,6 +183,4 @@ Use these commands in the designated bot channel to get real-time information ab
 - **No Events Showing**: The application may need time to detect events, or try generating test events with `python test_events.py`
 - **Discord Bot Not Responding**: Ensure your bot token is correct and the bot has proper permissions
 
-## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
