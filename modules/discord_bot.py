@@ -590,38 +590,76 @@ class DiscordBot:
             if "analysis" in insights:
                 embed.set_footer(text=insights["analysis"])
             
-            # Send via webhook (preferred method)
+            # Try both webhook and direct channel posting for maximum reliability
+            webhook_sent = False
+            
+            # 1. Try webhook first (if configured)
             webhook_url = self.config.DISCORD_NOTIFICATIONS.get("WEBHOOK_URL")
             if webhook_url:
-                # Use the bot's event loop if available
+                try:
+                    # Use the bot's event loop if available
+                    if hasattr(self.bot, 'loop') and self.bot.loop and self.bot.loop.is_running():
+                        future = asyncio.run_coroutine_threadsafe(
+                            self.send_webhook(embed, webhook_url), 
+                            self.bot.loop
+                        )
+                        try:
+                            # Wait for the result with a timeout
+                            webhook_sent = future.result(timeout=10)
+                            logger.info(f"Webhook sent: {webhook_sent}")
+                        except Exception as e:
+                            logger.error(f"Error waiting for webhook result: {str(e)}")
+                    else:
+                        # Create a new event loop if the bot's loop is not available
+                        try:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            webhook_sent = loop.run_until_complete(self.send_webhook(embed, webhook_url))
+                            loop.close()
+                            logger.info(f"Webhook sent (new loop): {webhook_sent}")
+                        except Exception as e:
+                            logger.error(f"Error with webhook in new event loop: {str(e)}")
+                except Exception as e:
+                    logger.error(f"Error sending webhook: {str(e)}")
+            
+            # 2. Always try direct channel posting as well
+            try:
+                # Queue the message for posting via bot
                 if hasattr(self.bot, 'loop') and self.bot.loop and self.bot.loop.is_running():
-                    future = asyncio.run_coroutine_threadsafe(
-                        self.send_webhook(embed, webhook_url), 
-                        self.bot.loop
-                    )
-                    try:
-                        # Wait for the result with a timeout
-                        if future.result(timeout=10):
-                            return  # Successfully sent via webhook
-                    except Exception as e:
-                        logger.error(f"Error waiting for webhook result: {str(e)}")
+                    asyncio.run_coroutine_threadsafe(self.message_queue.put(embed), self.bot.loop)
+                    logger.info(f"Queued blockchain event for posting via bot: {event_category}")
                 else:
-                    # Create a new event loop if the bot's loop is not available
+                    # If bot loop is not running, try to create a new event loop
                     try:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
-                        if loop.run_until_complete(self.send_webhook(embed, webhook_url)):
-                            loop.close()
-                            return  # Successfully sent via webhook
+                        
+                        # Create a temporary function to send the message directly
+                        async def send_direct():
+                            try:
+                                # Get the channel
+                                channel = self.bot.get_channel(int(self.channel_id))
+                                if channel:
+                                    await channel.send(embed=embed)
+                                    logger.info(f"Sent message directly to channel {self.channel_id}")
+                                    return True
+                                else:
+                                    logger.error(f"Channel with ID {self.channel_id} not found")
+                                    return False
+                            except Exception as e:
+                                logger.error(f"Error sending direct message: {str(e)}")
+                                return False
+                        
+                        # Try to send directly
+                        loop.run_until_complete(send_direct())
                         loop.close()
                     except Exception as e:
-                        logger.error(f"Error with webhook in new event loop: {str(e)}")
+                        logger.error(f"Error creating new event loop for direct message: {str(e)}")
+            except Exception as e:
+                logger.error(f"Error queuing message: {str(e)}")
             
-            # Fallback to bot if webhook fails and bot is running
-            if hasattr(self.bot, 'loop') and self.bot.loop and self.bot.loop.is_running():
-                asyncio.run_coroutine_threadsafe(self.message_queue.put(embed), self.bot.loop)
-                logger.info(f"Queued blockchain event for posting via bot: {event_category}")
-            else:
+            # 3. If both methods failed, log a warning
+            if not webhook_sent and not hasattr(self.bot, 'loop'):
                 logger.warning("Cannot send message: Discord bot not running and webhook failed")
                 
         except Exception as e:
@@ -700,7 +738,30 @@ class DiscordBot:
         """Run the Discord bot."""
         logger.info("Starting Discord bot")
         try:
+            # Check if token is available
+            if not self.config.DISCORD["BOT_TOKEN"]:
+                logger.error("Discord bot token is missing. Please check your .env file.")
+                logger.info("Application will continue running without Discord bot functionality")
+                return
+                
+            # Log token length for debugging (don't log the actual token)
+            token_length = len(self.config.DISCORD["BOT_TOKEN"]) if self.config.DISCORD["BOT_TOKEN"] else 0
+            logger.info(f"Discord bot token length: {token_length} characters")
+            
+            # Check if channel ID is valid
+            if not self.channel_id or self.channel_id == 0:
+                logger.error("Discord channel ID is missing or invalid. Please check your .env file.")
+                logger.info("Application will continue running without Discord bot functionality")
+                return
+                
+            logger.info(f"Discord bot will post to channel ID: {self.channel_id}")
+            
+            # Run the bot
             self.bot.run(self.config.DISCORD["BOT_TOKEN"])
+        except discord.errors.LoginFailure as e:
+            logger.error(f"Discord login failed: {str(e)}")
+            logger.error("Discord bot token appears to be invalid. Please check your DISCORD_BOT_TOKEN in the .env file.")
+            logger.info("Application will continue running without Discord bot functionality")
         except Exception as e:
             logger.error(f"Error starting Discord bot: {str(e)}")
             # If the token is invalid, log a more helpful message
@@ -810,3 +871,86 @@ class DiscordBot:
             
         else:
             return f"A blockchain event of type {event_category.replace('_', ' ').title()} was detected."
+
+    def test_discord_connection(self):
+        """Test the Discord connection by sending a test message.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info("Testing Discord connection...")
+        
+        # Create a test embed
+        embed = discord.Embed(
+            title="🧪 Discord Connection Test",
+            description="This is a test message to verify the Discord connection is working.",
+            color=0x00FF00,
+            timestamp=datetime.now()
+        )
+        
+        embed.add_field(name="Application", value="Cultivate Blockchain Monitor", inline=True)
+        embed.add_field(name="Status", value="Online", inline=True)
+        embed.add_field(name="Time", value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), inline=True)
+        embed.set_footer(text="If you can see this message, Discord notifications are working!")
+        
+        # Try webhook first
+        webhook_sent = False
+        webhook_url = self.config.DISCORD_NOTIFICATIONS.get("WEBHOOK_URL")
+        if webhook_url:
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                webhook_sent = loop.run_until_complete(self.send_webhook(embed, webhook_url))
+                loop.close()
+                logger.info(f"Test webhook sent: {webhook_sent}")
+            except Exception as e:
+                logger.error(f"Error sending test webhook: {str(e)}")
+        
+        # Try direct channel posting
+        channel_sent = False
+        try:
+            # Create a new event loop
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Create a temporary function to send the message directly
+            async def send_direct():
+                try:
+                    # Create a temporary client
+                    client = discord.Client(intents=discord.Intents.default())
+                    
+                    # Define on_ready event
+                    @client.event
+                    async def on_ready():
+                        try:
+                            # Get the channel
+                            channel = client.get_channel(int(self.channel_id))
+                            if channel:
+                                await channel.send(embed=embed)
+                                logger.info(f"Sent test message directly to channel {self.channel_id}")
+                                await client.close()
+                                return True
+                            else:
+                                logger.error(f"Channel with ID {self.channel_id} not found")
+                                await client.close()
+                                return False
+                        except Exception as e:
+                            logger.error(f"Error sending direct test message: {str(e)}")
+                            await client.close()
+                            return False
+                    
+                    # Run the client
+                    await client.start(self.config.DISCORD["BOT_TOKEN"])
+                    return True
+                except Exception as e:
+                    logger.error(f"Error in send_direct: {str(e)}")
+                    return False
+            
+            # Try to send directly
+            channel_sent = loop.run_until_complete(send_direct())
+            loop.close()
+        except Exception as e:
+            logger.error(f"Error creating new event loop for direct test message: {str(e)}")
+        
+        # Return result
+        return webhook_sent or channel_sent

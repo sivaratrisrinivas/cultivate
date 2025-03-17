@@ -557,6 +557,33 @@ class PageLoadResource(Resource):
             logger.error(f"Error handling page load event: {str(e)}")
             return {"error": str(e)}, 500
 
+class DiscordTestResource(Resource):
+    """Resource for testing Discord connection."""
+    
+    def post(self):
+        """Test the Discord connection by sending a test message."""
+        if not _discord_bot:
+            return {"error": "Discord bot not initialized"}, 500
+            
+        try:
+            # Test the Discord connection
+            success = _discord_bot.test_discord_connection()
+            
+            if success:
+                return {
+                    "success": True,
+                    "message": "Discord test message sent successfully"
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": "Failed to send Discord test message. Check logs for details."
+                }
+            
+        except Exception as e:
+            logger.error(f"Error testing Discord connection: {str(e)}")
+            return {"error": str(e)}, 500
+
 def register_routes(api):
     """Register API routes."""
     api.add_resource(EventResource, '/api/event')
@@ -568,4 +595,5 @@ def register_routes(api):
     api.add_resource(ControlResource, '/api/control')
     api.add_resource(TestEventsResource, '/api/test_events')
     api.add_resource(PageLoadResource, '/api/page_load')
+    api.add_resource(DiscordTestResource, '/api/test_discord')
     logger.info("API routes registered")
