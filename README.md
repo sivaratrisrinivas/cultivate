@@ -2,6 +2,10 @@
 
 Cultivate is a real-time monitoring tool for the Aptos blockchain that tracks important events and delivers insights through a web dashboard and Discord notifications.
 
+## Live Demo
+
+**Check out the live application here: [https://cultivate-qyb8.onrender.com/](https://cultivate-qyb8.onrender.com/)**
+
 ## What It Does
 
 - **Tracks Blockchain Events**: Monitors the Aptos blockchain for important events like token transfers, NFT sales, and price movements
@@ -197,6 +201,8 @@ Alternatively, you can use the included `render.yaml` file for deployment:
 6. Click "Apply" to deploy
 
 Once deployed, your application will be available at `https://your-service-name.onrender.com`
+
+**Current deployment: [https://cultivate-qyb8.onrender.com/](https://cultivate-qyb8.onrender.com/)**
 
 ## Using the Discord Bot
 
