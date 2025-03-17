@@ -183,4 +183,165 @@ Use these commands in the designated bot channel to get real-time information ab
 - **No Events Showing**: The application may need time to detect events, or try generating test events with `python test_events.py`
 - **Discord Bot Not Responding**: Ensure your bot token is correct and the bot has proper permissions
 
+## Deployment
+
+### Cloud Deployment Options
+
+#### Heroku Deployment
+
+1. Install the Heroku CLI and create an account at [heroku.com](https://heroku.com)
+2. Login and create a new app:
+   ```
+   heroku login
+   heroku create cultivate-app
+   ```
+3. Add a Procfile (already included in the repository):
+   ```
+   web: gunicorn api.app:app
+   worker: python main.py
+   ```
+4. Set up environment variables in Heroku dashboard or via CLI:
+   ```
+   heroku config:set APTOS_NODE_URL=https://fullnode.mainnet.aptoslabs.com/v1
+   heroku config:set DISCORD_BOT_TOKEN=your_token
+   # Add all other environment variables from your .env file
+   ```
+5. Deploy your application:
+   ```
+   git push heroku main
+   ```
+6. Scale your worker dyno:
+   ```
+   heroku ps:scale worker=1
+   ```
+
+#### Railway Deployment
+
+[Railway](https://railway.app/) offers a simpler deployment process:
+
+1. Create an account and connect your GitHub repository
+2. Create a new project from your GitHub repo
+3. Add environment variables in the Railway dashboard
+4. Railway will automatically deploy your application
+
+#### DigitalOcean App Platform
+
+1. Create a DigitalOcean account
+2. Create a new App Platform application
+3. Connect to your GitHub repository
+4. Configure environment variables
+5. Deploy the application
+
+### Self-Hosting Options
+
+#### Using a VPS (Virtual Private Server)
+
+1. Rent a VPS from providers like DigitalOcean, Linode, or AWS EC2
+2. SSH into your server:
+   ```
+   ssh user@your-server-ip
+   ```
+3. Install required dependencies:
+   ```
+   sudo apt update
+   sudo apt install python3-pip python3-venv nginx
+   ```
+4. Clone your repository:
+   ```
+   git clone https://github.com/yourusername/cultivate.git
+   cd cultivate
+   ```
+5. Set up a virtual environment:
+   ```
+   python3 -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   pip install gunicorn
+   ```
+6. Create a systemd service for your application:
+   ```
+   sudo nano /etc/systemd/system/cultivate.service
+   ```
+   
+   Add the following content:
+   ```
+   [Unit]
+   Description=Cultivate Aptos Blockchain Monitor
+   After=network.target
+
+   [Service]
+   User=your-username
+   WorkingDirectory=/path/to/cultivate
+   Environment="PATH=/path/to/cultivate/venv/bin"
+   EnvironmentFile=/path/to/cultivate/.env
+   ExecStart=/path/to/cultivate/venv/bin/python main.py
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+7. Create a systemd service for the web server:
+   ```
+   sudo nano /etc/systemd/system/cultivate-web.service
+   ```
+   
+   Add the following content:
+   ```
+   [Unit]
+   Description=Cultivate Web Server
+   After=network.target
+
+   [Service]
+   User=your-username
+   WorkingDirectory=/path/to/cultivate
+   Environment="PATH=/path/to/cultivate/venv/bin"
+   EnvironmentFile=/path/to/cultivate/.env
+   ExecStart=/path/to/cultivate/venv/bin/gunicorn -w 4 -b 127.0.0.1:5000 api.app:app
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+8. Configure Nginx as a reverse proxy:
+   ```
+   sudo nano /etc/nginx/sites-available/cultivate
+   ```
+   
+   Add the following content:
+   ```
+   server {
+       listen 80;
+       server_name your-domain.com;
+
+       location / {
+           proxy_pass http://127.0.0.1:5000;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+       }
+   }
+   ```
+9. Enable the Nginx site:
+   ```
+   sudo ln -s /etc/nginx/sites-available/cultivate /etc/nginx/sites-enabled/
+   sudo nginx -t
+   sudo systemctl restart nginx
+   ```
+10. Start and enable your services:
+    ```
+    sudo systemctl start cultivate cultivate-web
+    sudo systemctl enable cultivate cultivate-web
+    ```
+11. Set up SSL with Let's Encrypt:
+    ```
+    sudo apt install certbot python3-certbot-nginx
+    sudo certbot --nginx -d your-domain.com
+    ```
+
+### Domain and DNS Setup
+
+1. Purchase a domain name from providers like Namecheap, GoDaddy, or Google Domains
+2. Point your domain to your hosting provider by updating the DNS records
+3. For cloud platforms, follow their documentation for custom domain setup
+4. For VPS, set up an A record pointing to your server's IP address
+
+## License
+
 
