@@ -310,6 +310,12 @@ class MetricsResource(Resource):
             top_accounts = sorted(account_activity.items(), key=lambda x: x[1], reverse=True)[:5]
             top_collections = sorted(collection_activity.items(), key=lambda x: x[1], reverse=True)[:5]
             
+            # Log the metrics values for debugging
+            logger.info(f"Events processed: {getattr(_blockchain_monitor, 'events_processed_count', 0)}")
+            logger.info(f"Significant events: {getattr(_blockchain_monitor, 'significant_events_count', 0)}")
+            logger.info(f"Monitored accounts: {len(getattr(_blockchain_monitor, 'validated_accounts', []))}")
+            logger.info(f"Event handles: {len(getattr(_blockchain_monitor, 'event_handles', []))}")
+            
             # Get metrics from the blockchain monitor
             metrics = {
                 "events_processed": getattr(_blockchain_monitor, 'events_processed_count', 0),
