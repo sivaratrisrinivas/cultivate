@@ -239,6 +239,19 @@ class MetricsResource(Resource):
             return {"error": "Blockchain monitor not initialized"}, 500
             
         try:
+            # Force update the metrics counters from the blockchain monitor
+            # This ensures we're always returning the latest values
+            events_processed = getattr(_blockchain_monitor, 'events_processed_count', 0)
+            significant_events = getattr(_blockchain_monitor, 'significant_events_count', 0)
+            monitored_accounts = len(getattr(_blockchain_monitor, 'validated_accounts', []))
+            event_handles = len(getattr(_blockchain_monitor, 'event_handles', []))
+            
+            # Log the metrics values for debugging
+            logger.info(f"METRICS - Events processed: {events_processed}")
+            logger.info(f"METRICS - Significant events: {significant_events}")
+            logger.info(f"METRICS - Monitored accounts: {monitored_accounts}")
+            logger.info(f"METRICS - Event handles: {event_handles}")
+            
             # Get the latest version synchronously if it's an async method
             latest_version = 0
             get_latest_version_method = getattr(_blockchain_monitor, 'get_latest_version', None)
@@ -310,19 +323,13 @@ class MetricsResource(Resource):
             top_accounts = sorted(account_activity.items(), key=lambda x: x[1], reverse=True)[:5]
             top_collections = sorted(collection_activity.items(), key=lambda x: x[1], reverse=True)[:5]
             
-            # Log the metrics values for debugging
-            logger.info(f"Events processed: {getattr(_blockchain_monitor, 'events_processed_count', 0)}")
-            logger.info(f"Significant events: {getattr(_blockchain_monitor, 'significant_events_count', 0)}")
-            logger.info(f"Monitored accounts: {len(getattr(_blockchain_monitor, 'validated_accounts', []))}")
-            logger.info(f"Event handles: {len(getattr(_blockchain_monitor, 'event_handles', []))}")
-            
-            # Get metrics from the blockchain monitor
+            # Get metrics from the blockchain monitor - use the values we already retrieved
             metrics = {
-                "events_processed": getattr(_blockchain_monitor, 'events_processed_count', 0),
-                "significant_events": getattr(_blockchain_monitor, 'significant_events_count', 0),
+                "events_processed": events_processed,
+                "significant_events": significant_events,
                 "last_processed_version": getattr(_blockchain_monitor, 'last_processed_version', 0),
-                "monitored_accounts": len(getattr(_blockchain_monitor, 'validated_accounts', [])),
-                "event_handles": len(getattr(_blockchain_monitor, 'event_handles', [])),
+                "monitored_accounts": monitored_accounts,
+                "event_handles": event_handles,
                 "polling_interval": getattr(_blockchain_monitor, 'polling_interval', 60),
                 "uptime": int(time.time() - getattr(_blockchain_monitor, 'start_time', time.time())),
                 "account_list": getattr(_blockchain_monitor, 'validated_accounts', []),
@@ -566,19 +573,31 @@ class DiscordTestResource(Resource):
             return {"error": "Discord bot not initialized"}, 500
             
         try:
-            # Test the Discord connection
-            success = _discord_bot.test_discord_connection()
+            # Test the Discord connection using direct webhook
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            success = loop.run_until_complete(_discord_bot.test_webhook_directly())
+            loop.close()
             
             if success:
                 return {
                     "success": True,
-                    "message": "Discord test message sent successfully"
+                    "message": "Discord test message sent successfully via webhook"
                 }
             else:
-                return {
-                    "success": False,
-                    "message": "Failed to send Discord test message. Check logs for details."
-                }
+                # Try the regular test as a fallback
+                regular_success = _discord_bot.test_discord_connection()
+                
+                if regular_success:
+                    return {
+                        "success": True,
+                        "message": "Discord test message sent successfully via bot"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": "Failed to send Discord test message. Check logs for details."
+                    }
             
         except Exception as e:
             logger.error(f"Error testing Discord connection: {str(e)}")

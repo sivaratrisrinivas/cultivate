@@ -286,20 +286,26 @@ class BlockchainMonitor:
             return 0
     
     def process_events(self, events, discord_bot=None):
-        """Process a list of events.
+        """Process events to find significant ones.
         
         Args:
-            events (list): List of events to process
+            events: List of events to process
             discord_bot: Optional DiscordBot instance to post events to
-        """
-        if not events:
-            return []
             
-        logger.info(f"Processing {len(events)} events")
+        Returns:
+            list: List of significant events
+        """
         significant_events = []
+        
+        if not events:
+            return significant_events
+            
+        # Log the number of events being processed
+        logger.info(f"Processing {len(events)} events")
         
         # Increment events processed count
         self.events_processed_count += len(events)
+        logger.info(f"Updated events_processed_count to {self.events_processed_count}")
         
         for event in events:
             try:
@@ -329,12 +335,19 @@ class BlockchainMonitor:
                     significant_events.append(enriched_event)
                     # Increment significant events count
                     self.significant_events_count += 1
+                    logger.info(f"Updated significant_events_count to {self.significant_events_count}")
+                    
+                    # Send to Discord if available
                     if discord_bot:
+                        logger.info(f"Sending event to Discord: {event_type}")
                         discord_bot.post_blockchain_event(enriched_event)
                     
             except Exception as e:
                 logger.error(f"Error processing event: {str(e)}")
                 
+        # Log the final metrics after processing all events
+        logger.info(f"After processing: events_processed_count={self.events_processed_count}, significant_events_count={self.significant_events_count}")
+        
         return significant_events
     
     def _update_metrics(self, event):

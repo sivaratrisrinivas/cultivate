@@ -519,17 +519,24 @@ class DiscordBot:
             # Create webhook payload
             webhook_data = {
                 "embeds": [embed.to_dict()],
-                "username": "Aptos Blockchain Monitor"
+                "username": "Aptos Blockchain Monitor",
+                "content": "🔔 **New Blockchain Event Detected!**"  # Add a text message to make it more visible
             }
+            
+            logger.info(f"Sending webhook to {webhook_url[:20]}...")
             
             # Send webhook using aiohttp
             async with aiohttp.ClientSession() as session:
                 async with session.post(webhook_url, json=webhook_data) as response:
-                    if response.status == 204:
+                    status = response.status
+                    logger.info(f"Webhook response status: {status}")
+                    
+                    if status == 204:
                         logger.info(f"Successfully sent blockchain event via webhook: {embed.title}")
                         return True
                     else:
-                        logger.error(f"Failed to send webhook: HTTP {response.status}")
+                        response_text = await response.text()
+                        logger.error(f"Failed to send webhook: HTTP {status}, Response: {response_text}")
                         return False
         except Exception as webhook_error:
             logger.error(f"Error sending via webhook: {str(webhook_error)}")
@@ -954,3 +961,73 @@ class DiscordBot:
         
         # Return result
         return webhook_sent or channel_sent
+
+    async def test_webhook_directly(self):
+        """Test the webhook directly without using the Discord bot.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        logger.info("Testing webhook directly...")
+        
+        webhook_url = self.config.DISCORD_NOTIFICATIONS.get("WEBHOOK_URL")
+        if not webhook_url:
+            logger.error("No webhook URL configured")
+            return False
+            
+        try:
+            import aiohttp
+            import json
+            
+            # Create a simple webhook payload
+            webhook_data = {
+                "content": "🧪 **WEBHOOK TEST** - If you can see this message, webhook notifications are working!",
+                "username": "Aptos Blockchain Monitor",
+                "embeds": [
+                    {
+                        "title": "Webhook Test",
+                        "description": "This is a test message sent directly via webhook.",
+                        "color": 65280,  # Green
+                        "fields": [
+                            {
+                                "name": "Application",
+                                "value": "Cultivate Blockchain Monitor",
+                                "inline": True
+                            },
+                            {
+                                "name": "Status",
+                                "value": "Online",
+                                "inline": True
+                            },
+                            {
+                                "name": "Time",
+                                "value": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                "inline": True
+                            }
+                        ],
+                        "footer": {
+                            "text": "If you can see this message, webhook notifications are working!"
+                        }
+                    }
+                ]
+            }
+            
+            logger.info(f"Sending test webhook to {webhook_url[:20]}...")
+            logger.info(f"Webhook payload: {json.dumps(webhook_data)[:200]}...")
+            
+            # Send webhook using aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.post(webhook_url, json=webhook_data) as response:
+                    status = response.status
+                    logger.info(f"Webhook response status: {status}")
+                    
+                    if status == 204:
+                        logger.info("Successfully sent test webhook")
+                        return True
+                    else:
+                        response_text = await response.text()
+                        logger.error(f"Failed to send test webhook: HTTP {status}, Response: {response_text}")
+                        return False
+        except Exception as webhook_error:
+            logger.error(f"Error sending test webhook: {str(webhook_error)}")
+            return False
