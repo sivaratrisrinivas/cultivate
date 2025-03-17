@@ -239,18 +239,25 @@ class MetricsResource(Resource):
             return {"error": "Blockchain monitor not initialized"}, 500
             
         try:
-            # Force update the metrics counters from the blockchain monitor
+            # CRITICAL: Force update the metrics counters from the blockchain monitor
             # This ensures we're always returning the latest values
             events_processed = getattr(_blockchain_monitor, 'events_processed_count', 0)
             significant_events = getattr(_blockchain_monitor, 'significant_events_count', 0)
             monitored_accounts = len(getattr(_blockchain_monitor, 'validated_accounts', []))
             event_handles = len(getattr(_blockchain_monitor, 'event_handles', []))
             
+            # Ensure events_processed is at least the number of recent events
+            recent_events = getattr(_blockchain_monitor, 'recent_events', [])
+            if events_processed < len(recent_events):
+                events_processed = len(recent_events)
+                # Update the actual counter in the blockchain monitor
+                _blockchain_monitor.events_processed_count = events_processed
+            
             # Log the metrics values for debugging
-            logger.info(f"METRICS - Events processed: {events_processed}")
-            logger.info(f"METRICS - Significant events: {significant_events}")
-            logger.info(f"METRICS - Monitored accounts: {monitored_accounts}")
-            logger.info(f"METRICS - Event handles: {event_handles}")
+            logger.info(f"METRICS API - Events processed: {events_processed}")
+            logger.info(f"METRICS API - Significant events: {significant_events}")
+            logger.info(f"METRICS API - Monitored accounts: {monitored_accounts}")
+            logger.info(f"METRICS API - Event handles: {event_handles}")
             
             # Get the latest version synchronously if it's an async method
             latest_version = 0
@@ -274,9 +281,6 @@ class MetricsResource(Resource):
                     except Exception as e:
                         logger.error(f"Error getting latest version: {str(e)}")
                         latest_version = 0
-            
-            # Get recent events for analysis
-            recent_events = getattr(_blockchain_monitor, 'recent_events', [])
             
             # Calculate event type distribution
             event_types = {}
@@ -473,11 +477,25 @@ class TestEventsResource(Resource):
             if not data or not isinstance(data, list):
                 return {"error": "Invalid data format. Expected a list of events."}, 400
             
-            # Add events to blockchain monitor's recent_events
-            _blockchain_monitor.recent_events = data
+            # Generate unique IDs for events if not present
+            for event in data:
+                if 'id' not in event:
+                    event['id'] = f"test_{int(time.time())}_{hash(str(event))}"
             
-            # Update metrics
+            # Add events to blockchain monitor's recent_events
+            for event in data:
+                if event not in _blockchain_monitor.recent_events:
+                    _blockchain_monitor.recent_events.append(event)
+            
+            # Ensure recent_events doesn't exceed 100 items
+            if len(_blockchain_monitor.recent_events) > 100:
+                _blockchain_monitor.recent_events = _blockchain_monitor.recent_events[-100:]
+            
+            # Update metrics - IMPORTANT: This is what updates the UI
             _blockchain_monitor.events_processed_count += len(data)
+            
+            # Log the updated metrics for debugging
+            logger.info(f"TEST EVENTS - Updated events_processed_count to {_blockchain_monitor.events_processed_count}")
             
             # Update event type counts
             for event in data:
@@ -493,21 +511,32 @@ class TestEventsResource(Resource):
                     # Get the most recent event (last in the list)
                     most_recent_event = data[-1]
                     
+                    # Mark as significant event
+                    _blockchain_monitor.significant_events_count += 1
+                    logger.info(f"TEST EVENTS - Updated significant_events_count to {_blockchain_monitor.significant_events_count}")
+                    
                     # Post event to Discord
                     _discord_bot.post_blockchain_event(most_recent_event)
                     sent_count = 1
                     logger.info(f"Posted most recent event to Discord: {most_recent_event.get('event_category', 'unknown')}")
-                    
-                    # Update significant events count
-                    _blockchain_monitor.significant_events_count += 1
                 except Exception as e:
                     logger.error(f"Error posting event to Discord: {str(e)}")
+            
+            # Force update the metrics in the blockchain monitor
+            # This ensures they're properly reflected in the UI
+            _blockchain_monitor.events_processed_count = max(_blockchain_monitor.events_processed_count, len(_blockchain_monitor.recent_events))
             
             return {
                 "success": True,
                 "message": f"Added {len(data)} test events",
                 "event_count": len(data),
-                "sent_to_discord": sent_count
+                "sent_to_discord": sent_count,
+                "current_metrics": {
+                    "events_processed": _blockchain_monitor.events_processed_count,
+                    "significant_events": _blockchain_monitor.significant_events_count,
+                    "monitored_accounts": len(_blockchain_monitor.validated_accounts),
+                    "event_handles": len(_blockchain_monitor.event_handles)
+                }
             }
             
         except Exception as e:

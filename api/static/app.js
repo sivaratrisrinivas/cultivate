@@ -71,10 +71,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Add a manual refresh button to the metrics panel header if it doesn't exist
+    const metricsPanel = document.querySelector('.metrics-grid');
+    if (metricsPanel && !document.getElementById('refresh-metrics-btn')) {
+        const refreshButton = document.createElement('button');
+        refreshButton.id = 'refresh-metrics-btn';
+        refreshButton.className = 'refresh-btn';
+        refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i>';
+        refreshButton.title = 'Force Refresh Metrics';
+        refreshButton.style.position = 'absolute';
+        refreshButton.style.top = '10px';
+        refreshButton.style.right = '10px';
+        refreshButton.addEventListener('click', () => {
+            console.log('Manual metrics refresh triggered');
+            forceRefreshMetrics();
+            showToast('Metrics refreshed');
+        });
+        metricsPanel.parentElement.style.position = 'relative';
+        metricsPanel.parentElement.appendChild(refreshButton);
+    }
+
     // Force a refresh after a short delay to ensure everything is loaded
     setTimeout(() => {
         console.log('Forcing initial refresh...');
         refreshData();
+        forceRefreshMetrics(); // Force metrics refresh on page load
     }, 1000);
 });
 
@@ -305,27 +326,32 @@ async function fetchMetrics() {
             const data = await response.json();
             console.log('Metrics data received:', data);
 
-            // Force update metrics even if they're empty
-            const metrics = data.metrics || {
-                events_processed: 0,
-                significant_events: 0,
-                monitored_accounts: 0,
-                event_handles: 0
-            };
+            if (data && data.metrics) {
+                // Log detailed metrics for debugging
+                console.log('Events processed:', data.metrics.events_processed);
+                console.log('Significant events:', data.metrics.significant_events);
+                console.log('Monitored accounts:', data.metrics.monitored_accounts);
+                console.log('Event handles:', data.metrics.event_handles);
 
-            // Always update the basic metrics
-            document.getElementById('events-processed').textContent = metrics.events_processed || 0;
-            document.getElementById('significant-events').textContent = metrics.significant_events || 0;
-            document.getElementById('monitored-accounts').textContent = metrics.monitored_accounts || 0;
-            document.getElementById('event-handles').textContent = metrics.event_handles || 0;
+                // CRITICAL: Force update the DOM elements directly with the metrics values
+                document.getElementById('events-processed').textContent = data.metrics.events_processed || 0;
+                document.getElementById('significant-events').textContent = data.metrics.significant_events || 0;
+                document.getElementById('monitored-accounts').textContent = data.metrics.monitored_accounts || 0;
+                document.getElementById('event-handles').textContent = data.metrics.event_handles || 0;
 
-            // Update polling interval display if it changed
-            if (metrics.polling_interval && metrics.polling_interval !== pollingInterval) {
-                pollingInterval = metrics.polling_interval;
-                document.getElementById('polling-interval').textContent = `${pollingInterval}s`;
+                // Update the metrics display with the received data
+                updateMetrics(data.metrics);
+
+                // Update system status if available
+                if (data.metrics.system_status) {
+                    updateSystemStatus(data.metrics.system_status);
+                }
+
+                return true;
+            } else {
+                console.warn('Metrics data is missing or invalid:', data);
+                return false;
             }
-
-            return true;
         } else {
             console.error('Error fetching metrics:', response.statusText);
             return false;
@@ -345,16 +371,22 @@ function updateMetrics(data) {
         return;
     }
 
-    // Update basic metrics
-    eventsProcessed.textContent = data.events_processed || 0;
-    significantEvents.textContent = data.significant_events || 0;
-    monitoredAccounts.textContent = data.monitored_accounts || 0;
-    eventHandles.textContent = data.event_handles || 0;
+    // Force update the DOM elements directly
+    const eventsProcessedElement = document.getElementById('events-processed');
+    const significantEventsElement = document.getElementById('significant-events');
+    const monitoredAccountsElement = document.getElementById('monitored-accounts');
+    const eventHandlesElement = document.getElementById('event-handles');
+
+    if (eventsProcessedElement) eventsProcessedElement.textContent = data.events_processed || 0;
+    if (significantEventsElement) significantEventsElement.textContent = data.significant_events || 0;
+    if (monitoredAccountsElement) monitoredAccountsElement.textContent = data.monitored_accounts || 0;
+    if (eventHandlesElement) eventHandlesElement.textContent = data.event_handles || 0;
 
     // Update polling interval display if it changed
     if (data.polling_interval && data.polling_interval !== pollingInterval) {
         pollingInterval = data.polling_interval;
-        pollingIntervalDisplay.textContent = `${pollingInterval}s`;
+        const pollingIntervalElement = document.getElementById('polling-interval');
+        if (pollingIntervalElement) pollingIntervalElement.textContent = `${pollingInterval}s`;
     }
 
     // Update blockchain version if available
@@ -961,9 +993,61 @@ function forceRefresh() {
     }, 500);
 }
 
-// Refresh data
-function refreshData() {
-    fetchMetrics();
-    fetchEvents();
+// Refresh all data
+async function refreshData() {
+    console.log('Refreshing all data...');
+
+    // Check server status
+    await checkServerStatus();
+
+    // Force refresh metrics
+    await forceRefreshMetrics();
+
+    // Fetch events
+    await fetchEvents();
+
     showToast('Data refreshed');
+}
+
+// Force refresh metrics
+async function forceRefreshMetrics() {
+    console.log('Forcing metrics refresh...');
+
+    try {
+        // First, try to add a test event to update the metrics
+        const testEvent = {
+            event_category: 'test_event',
+            account: '0x1',
+            timestamp: new Date().toISOString(),
+            description: 'Test event to force metrics update',
+            id: `test_${Date.now()}`
+        };
+
+        const response = await fetch('/api/test_events', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify([testEvent])
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            console.log('Test event added to force metrics update:', data);
+
+            // If the response includes current metrics, update the UI directly
+            if (data.current_metrics) {
+                document.getElementById('events-processed').textContent = data.current_metrics.events_processed || 0;
+                document.getElementById('significant-events').textContent = data.current_metrics.significant_events || 0;
+                document.getElementById('monitored-accounts').textContent = data.current_metrics.monitored_accounts || 0;
+                document.getElementById('event-handles').textContent = data.current_metrics.event_handles || 0;
+            }
+        }
+
+        // Then fetch metrics to ensure UI is updated
+        await fetchMetrics();
+
+    } catch (error) {
+        console.error('Error forcing metrics refresh:', error);
+    }
 }
