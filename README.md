@@ -1,122 +1,98 @@
-# Aptos Blockchain Monitor
+# Cultivate: Aptos Blockchain Monitor
 
-A modern, real-time monitoring system for the Aptos blockchain with Discord integration and AI-powered event analysis.
+Cultivate is a real-time monitoring tool for the Aptos blockchain that tracks important events and delivers insights through a web dashboard and Discord notifications.
 
-![Aptos Blockchain Monitor](https://aptoslabs.com/images/aptos-meta-image.jpg)
+## What It Does
 
-## Features
+- **Tracks Blockchain Events**: Monitors the Aptos blockchain for important events like token transfers, NFT sales, and price movements
+- **AI-Powered Insights**: Analyzes events and generates easy-to-understand explanations
+- **Real-Time Notifications**: Sends alerts to Discord when significant events occur
+- **Interactive Dashboard**: Provides a web interface to view and filter blockchain events
 
-- **Real-time Blockchain Monitoring**: Track events on the Aptos blockchain as they happen
-- **Discord Integration**: Receive notifications and interact with the monitor via Discord
-- **AI-Powered Analysis**: Intelligent event categorization and summarization
-- **Modern UI**: Sleek dark mode interface with responsive design
-- **Customizable Alerts**: Set up alerts for specific event types or accounts
-- **Event Filtering**: Filter events by type, account, and time range
-- **Meme Generation**: Automatic meme generation for significant blockchain events
+## Getting Started
 
-## Prerequisites
+### Requirements
 
-- Python 3.8+
-- Discord Bot Token
-- Aptos Node Access
-- OpenAI API Key (for AI features)
+- Python 3.10+
+- Discord account and bot token
+- X.AI API key (for AI-powered insights)
 
-## Installation
+### Setup
 
 1. Clone the repository:
-   ```bash
-   git clone https://github.com/sivaratrisrinivas/hackathons/cultivate.git
+   ```
+   git clone https://github.com/yourusername/cultivate.git
    cd cultivate
    ```
 
 2. Install dependencies:
-   ```bash
+   ```
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file based on the provided example:
-   ```bash
-   cp .env.example .env
+3. Create a `.env` file with your configuration:
    ```
-
-4. Update the `.env` file with your configuration details:
-   ```
-   # Aptos Configuration
+   # Blockchain configuration
    APTOS_NODE_URL=https://fullnode.mainnet.aptoslabs.com/v1
-   APTOS_WEBSOCKET_URL=wss://fullnode.mainnet.aptoslabs.com/v1/websocket
-   
-   # Discord Configuration
-   DISCORD_TOKEN=your_discord_token
-   DISCORD_CHANNEL_ID=your_channel_id
+   APTOS_NETWORK=mainnet
+   POLLING_INTERVAL=60
+
+   # Discord configuration
+   DISCORD_BOT_TOKEN=your_discord_bot_token
+   DISCORD_CHANNEL_ID=your_discord_channel_id
    DISCORD_PREFIX=!
-   
-   # OpenAI Configuration
-   OPENAI_API_KEY=your_openai_api_key
-   
-   # Web Server Configuration
-   WEB_SERVER_HOST=0.0.0.0
-   WEB_SERVER_PORT=8000
+
+   # X.AI configuration
+   XAI_API_KEY=your_xai_api_key
+   XAI_API_URL=https://api.x.ai/v1
+   GROK_MODEL=grok-2-latest
+   AI_TEMPERATURE=0.7
+
+   # Discord webhook for notifications
+   DISCORD_WEBHOOK_URL=your_discord_webhook_url
+   DISCORD_NOTIFICATION_THRESHOLD=0.8
+
+   # API configuration
+   PORT=5000
+   HOST=0.0.0.0
    ```
 
-## Usage
-
-1. Start the application:
-   ```bash
-   python main.py
+4. Run the application:
+   ```
+   python -m main
    ```
 
-2. Access the web dashboard:
-   ```
-   http://localhost:8000
-   ```
+5. Access the dashboard at `http://localhost:5000`
 
-3. Interact with the Discord bot using commands:
-   - `/monitor start` - Start monitoring
-   - `/monitor stop` - Stop monitoring
-   - `/status` - Check monitoring status
-   - `/events [type] [account] [limit]` - View recent events
-   - `/alert add [type] [account]` - Set up alerts
-   - `/alert list` - View alert configurations
-   - `/alert remove [id]` - Remove an alert
-   - `/help` - Display help message
+## Using the Discord Bot
+
+The Discord bot provides several commands to interact with the blockchain monitor:
+
+- `!events [count]` - Shows recent blockchain events (default: 5)
+- `!status` - Shows the current status of the blockchain monitor
+- `!metrics` - Shows blockchain metrics and statistics
+- `!custom_help` - Shows help information
+
+Use these commands in the designated bot channel to get real-time information about blockchain events.
 
 ## Project Structure
 
-```
-cultivate/
-├── api/                    # Web API and frontend
-│   ├── static/             # Static assets (HTML, CSS, JS)
-│   ├── app.py              # Flask application
-│   └── routes.py           # API routes
-├── modules/                # Core modules
-│   ├── ai_module.py        # AI integration
-│   ├── blockchain_monitor.py # Blockchain monitoring
-│   └── discord_bot.py      # Discord bot integration
-├── utils/                  # Utility functions
-│   ├── config.py           # Configuration management
-│   └── logger.py           # Logging setup
-├── .env.example            # Environment variables example
-├── main.py                 # Application entry point
-└── requirements.txt        # Python dependencies
-```
+- `modules/` - Core functionality modules
+  - `blockchain.py` - Blockchain monitoring and event processing
+  - `ai.py` - AI-powered insights generation
+  - `discord_bot.py` - Discord bot for notifications
+  - `notification.py` - Notification handling
+- `api/` - Web API and dashboard
+- `utils/` - Utility functions
+- `tests/` - Test suite
+- `documentation/` - Project documentation
 
-## Deployment
+## Troubleshooting
 
-The application can be deployed to cloud platforms like:
-
-- **Heroku**: Easy deployment with Procfile
-- **AWS**: Deploy using EC2 or ECS
-- **Google Cloud**: Deploy using App Engine or Cloud Run
-- **Digital Ocean**: Deploy using Droplets or App Platform
+- **UI Shows Offline**: Refresh the page or check if the application is running
+- **No Events Showing**: The application may need time to detect events, or try generating test events with `python test_events.py`
+- **Discord Bot Not Responding**: Ensure your bot token is correct and the bot has proper permissions
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Contact
-
-For questions or support, please open an issue or contact the repository owner.

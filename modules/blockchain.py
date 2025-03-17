@@ -3,17 +3,26 @@ import logging
 import time
 import threading
 import hashlib
+import asyncio
+import requests
 from datetime import datetime
 from typing import Dict, List, Optional, Callable, Any
 
 # Import the Aptos SDK
-from aptos_sdk.client import RestClient
+from aptos_sdk.async_client import RestClient
 from aptos_sdk.account import Account
 from aptos_sdk.transactions import EntryFunction, TransactionArgument, TransactionPayload
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Add file handler for more detailed logging
+file_handler = logging.FileHandler('logs/modules.blockchain-2025-03-15-new.log')
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 class BlockchainMonitor:
     """Class to monitor blockchain events and trigger callbacks."""
@@ -40,20 +49,37 @@ class BlockchainMonitor:
         ]
         self.validated_accounts = []
         self.event_handles = []
+        self.recent_events = []
         self.last_processed_version = self._get_last_processed_version()
-        
-        # Metrics for UI
         self.start_time = time.time()
+        self.polling_interval = config.BLOCKCHAIN["POLLING_INTERVAL"]
+        
+        # Initialize metrics counters
         self.events_processed_count = 0
         self.significant_events_count = 0
-        self.recent_events = []  # Store recent events for UI display
-        self.polling_interval = 60  # Default polling interval in seconds
+        
+        # Initialize activity tracking
+        self.event_type_counts = {}
+        self.account_activity = {}
+        self.token_activity = {}
+        self.collection_activity = {}
+        
+        # Initialize time-based metrics
+        self.hourly_event_counts = [0] * 24
+        self.daily_event_counts = [0] * 7
+        
         self.explorer_url = "https://explorer.aptoslabs.com"
         
         # Monitored accounts, tokens, and collections
         self.monitored_accounts = []
         self.monitored_tokens = []
         self.monitored_collections = []
+        
+        # Enhanced metrics tracking
+        self.hourly_event_counts = [0] * 24  # Events per hour for the last 24 hours
+        self.daily_event_counts = [0] * 7    # Events per day for the last 7 days
+        self.last_metrics_update = time.time()
+        self.version_history = []    # Track blockchain version over time
         
         # Add default monitored items from config if available
         if hasattr(self.config, 'MONITOR') and self.config.MONITOR:
@@ -70,7 +96,9 @@ class BlockchainMonitor:
             with open("last_version.txt", "r") as f:
                 return int(f.read().strip())
         except:
-            return 0
+            # Start from a recent but not too recent version to get some events
+            # Use a lower value to ensure we process some events
+            return 2481600000  # Set to a lower value to get some events
             
     def _save_last_processed_version(self, version):
         """Save the last processed version to storage."""
@@ -86,15 +114,15 @@ class BlockchainMonitor:
         logger.info(f"Registered event callback: {callback.__name__}")
         self.event_callbacks.append(callback)
     
-    def validate_accounts(self):
+    async def validate_accounts(self):
         """Validate that the accounts of interest exist on the blockchain."""
         valid_accounts = []
         
         for account in self.accounts_of_interest:
             try:
-                # Use the Aptos SDK to fetch account information
-                account_info = self.client.account(account)
-                if account_info:
+                # Use direct REST API call instead of SDK
+                response = requests.get(f"{self.node_url}/accounts/{account}")
+                if response.status_code == 200:
                     logger.info(f"Account validated: {account}")
                     valid_accounts.append(account)
                 else:
@@ -105,7 +133,7 @@ class BlockchainMonitor:
         self.validated_accounts = valid_accounts
         return valid_accounts
     
-    def discover_event_handles(self):
+    async def discover_event_handles(self):
         """Discover event handles for the validated accounts."""
         event_handles = []
         
@@ -124,29 +152,25 @@ class BlockchainMonitor:
         for account in self.validated_accounts:
             for handle_info in common_handles:
                 try:
-                    # Try to fetch events for this handle to see if it exists
-                    # Note: The SDK doesn't have a direct way to check if a handle exists,
-                    # so we'll try to fetch events and catch exceptions
+                    # Use direct REST API call instead of SDK
                     resource_type = handle_info["handle"]
                     field_name = handle_info["field"]
                     
                     # Get the resource that contains the event handle
                     try:
-                        # Try to get the resource directly
-                        resource = self.client.account_resource(
-                            account,
-                            resource_type
-                        )
-                        
-                        # Check if the field exists in the resource
-                        if field_name in resource["data"]:
-                            handle = {
-                                "account": account,
-                                "event_handle": resource_type,
-                                "field_name": field_name
-                            }
-                            event_handles.append(handle)
-                            logger.info(f"Discovered event handle: {account}/{resource_type}/{field_name}")
+                        response = requests.get(f"{self.node_url}/accounts/{account}/resource/{resource_type}")
+                        if response.status_code == 200:
+                            resource = response.json()
+                            
+                            # Check if the field exists in the resource
+                            if "data" in resource and field_name in resource["data"]:
+                                handle = {
+                                    "account": account,
+                                    "event_handle": resource_type,
+                                    "field_name": field_name
+                                }
+                                event_handles.append(handle)
+                                logger.info(f"Discovered event handle: {account}/{resource_type}/{field_name}")
                     except Exception as e:
                         # Resource doesn't exist or field doesn't exist
                         pass
@@ -158,10 +182,10 @@ class BlockchainMonitor:
         self.event_handles = event_handles
         return event_handles
     
-    def fetch_events(self):
-        """Fetch events from the blockchain using the Aptos SDK."""
+    async def fetch_events(self):
+        """Fetch events from the blockchain using direct REST API calls."""
         all_events = []
-        current_version = self.get_latest_version()
+        current_version = await self.get_latest_version()
         
         if current_version <= self.last_processed_version:
             logger.info(f"No new blocks since last check (current: {current_version}, last: {self.last_processed_version})")
@@ -172,67 +196,91 @@ class BlockchainMonitor:
         # Fetch events for each discovered event handle
         for handle in self.event_handles:
             try:
-                # The SDK doesn't have a direct method to get events by version range
-                # So we'll need to use the REST API directly or adapt our approach
+                # Use async REST API call
+                url = f"{self.node_url}/accounts/{handle['account']}/events/{handle['event_handle']}/{handle['field_name']}"
+                logger.debug(f"Fetching events from URL: {url}")
                 
-                # For now, we'll try to get recent events and filter them
+                # Use a single approach for fetching data to avoid event loop issues
                 try:
-                    # Get the resource that contains the event handle
-                    resource = self.client.account_resource(
-                        handle["account"],
-                        handle["event_handle"]
-                    )
-                    
-                    # Get the event handle data
-                    if handle["field_name"] in resource["data"]:
-                        event_handle = resource["data"][handle["field_name"]]
-                        
-                        # Get the creation number and counter
-                        creation_number = event_handle.get("creation_number", "0")
-                        counter = event_handle.get("counter", "0")
-                        
-                        # If there are events (counter > 0), fetch them
-                        if int(counter) > 0:
-                            # Use the REST API directly through the client
-                            # We'll fetch the most recent events (up to 25)
-                            url = f"{self.node_url}/accounts/{handle['account']}/events/{handle['event_handle']}/{handle['field_name']}"
-                            response = self.client.client.get(url)
-                            events_data = response.json()
-                            
-                            if events_data:
-                                logger.info(f"Found {len(events_data)} events for {handle['account']}/{handle['event_handle']}/{handle['field_name']}")
-                                
-                                # Store all events regardless of version for UI display
-                                for event in events_data:
-                                    # Enrich event with handle information
-                                    event["account"] = handle["account"]
-                                    event["event_handle"] = handle["event_handle"]
-                                    event["field_name"] = handle["field_name"]
-                                    
-                                    # Add to all events list
-                                    all_events.append(event)
-                                
-                                # Add these events to recent_events for UI display
-                                enriched_events = [self._enrich_event(event) for event in events_data]
-                                self.recent_events.extend(enriched_events)
-                                self.recent_events = self.recent_events[-100:]  # Keep only the last 100 events
+                    response = await self.client.client.get(url)
+                    events_data = response.json()
                 except Exception as e:
-                    logger.error(f"Error fetching events for {handle['account']}/{handle['event_handle']}/{handle['field_name']}: {str(e)}")
+                    # If any error occurs, use a simple synchronous request as fallback
+                    logger.warning(f"Error with async request, using synchronous fallback: {str(e)}")
+                    import requests
+                    response = requests.get(url)
+                    if response.status_code == 200:
+                        events_data = response.json()
+                    else:
+                        logger.error(f"Error fetching events: {response.status_code} - {response.text}")
+                        events_data = []
+                
+                if events_data:
+                    logger.info(f"Found {len(events_data)} events for {handle['account']}/{handle['event_handle']}/{handle['field_name']}")
+                    
+                    # Filter events by version if needed
+                    filtered_events = []
+                    for event in events_data:
+                        event_version = int(event.get("version", 0))
+                        
+                        if event_version > self.last_processed_version:
+                            # Enrich event with handle information
+                            event["account"] = handle["account"]
+                            event["event_handle"] = handle["event_handle"]
+                            event["field_name"] = handle["field_name"]
+                            
+                            # Add event type based on handle
+                            if "token::TokenStore/deposit_events" in f"{handle['event_handle']}/{handle['field_name']}":
+                                event["type"] = "token_deposit"
+                            elif "token::TokenStore/withdraw_events" in f"{handle['event_handle']}/{handle['field_name']}":
+                                event["type"] = "token_withdrawal"
+                            elif "coin::CoinStore/deposit_events" in f"{handle['event_handle']}/{handle['field_name']}":
+                                event["type"] = "coin_deposit"
+                            elif "coin::CoinStore/withdraw_events" in f"{handle['event_handle']}/{handle['field_name']}":
+                                event["type"] = "coin_withdrawal"
+                            else:
+                                event["type"] = "other"
+                            
+                            filtered_events.append(event)
+                    
+                    if filtered_events:
+                        logger.info(f"Found {len(filtered_events)} new events after filtering for {handle['account']}/{handle['event_handle']}/{handle['field_name']}")
+                        all_events.extend(filtered_events)
+                    else:
+                        logger.info(f"No new events after filtering for {handle['account']}/{handle['event_handle']}/{handle['field_name']}")
             except Exception as e:
-                logger.error(f"Error processing handle {handle['account']}/{handle['event_handle']}/{handle['field_name']}: {str(e)}")
+                logger.error(f"Error fetching events for {handle['account']}/{handle['event_handle']}/{handle['field_name']}: {str(e)}")
         
-        # Update the last processed version
-        if all_events:
-            self._save_last_processed_version(current_version)
+        # Update last processed version
+        if all_events and current_version > self.last_processed_version:
             self.last_processed_version = current_version
+            
+        if not all_events:
+            logger.info("No new events detected")
             
         return all_events
     
-    def get_latest_version(self):
+    async def get_latest_version(self):
         """Get the latest version (block height) of the blockchain."""
         try:
-            ledger_info = self.client.info()
-            return int(ledger_info["ledger_version"])
+            # Try to use the async client first
+            try:
+                response = await self.client.client.get(f"{self.node_url}")
+                ledger_info = response.json()
+                return int(ledger_info.get("ledger_version", 0))
+            except RuntimeError as e:
+                # If we get an event loop error, fall back to synchronous approach
+                if "Event loop is closed" in str(e):
+                    logger.warning("Event loop is closed, falling back to synchronous request")
+                    import requests
+                    response = requests.get(f"{self.node_url}")
+                    if response.status_code == 200:
+                        ledger_info = response.json()
+                        return int(ledger_info.get("ledger_version", 0))
+                else:
+                    # Re-raise if it's not an event loop error
+                    raise
+            return 0
         except Exception as e:
             logger.error(f"Error getting latest version: {str(e)}")
             return 0
@@ -245,9 +293,13 @@ class BlockchainMonitor:
             discord_bot: Optional DiscordBot instance to post events to
         """
         if not events:
-            return
+            return []
             
         logger.info(f"Processing {len(events)} events")
+        significant_events = []
+        
+        # Increment events processed count
+        self.events_processed_count += len(events)
         
         for event in events:
             try:
@@ -259,22 +311,120 @@ class BlockchainMonitor:
                 enriched_event = self._enrich_event(event)
                 
                 # Store event
-                self.recent_events.append(enriched_event)
+                if enriched_event not in self.recent_events:
+                    self.recent_events.append(enriched_event)
                 
                 # Limit events list size
                 if len(self.recent_events) > 100:
                     self.recent_events = self.recent_events[-100:]
                 
+                # Update metrics
+                self._update_metrics(enriched_event)
+                
                 # Check if this event is related to a monitored account
                 is_user_related = self.is_user_related_event(enriched_event)
                 
                 # Only send to Discord if it's related to a user-monitored account
-                if is_user_related and discord_bot:
-                    discord_bot.post_blockchain_event(enriched_event)
+                if is_user_related:
+                    significant_events.append(enriched_event)
+                    # Increment significant events count
+                    self.significant_events_count += 1
+                    if discord_bot:
+                        discord_bot.post_blockchain_event(enriched_event)
                     
             except Exception as e:
                 logger.error(f"Error processing event: {str(e)}")
                 
+        return significant_events
+    
+    def _update_metrics(self, event):
+        """Update metrics based on an event.
+        
+        Args:
+            event: The event to update metrics for
+        """
+        try:
+            # Update event type counts
+            event_category = event.get('event_category', 'other')
+            self.event_type_counts[event_category] = self.event_type_counts.get(event_category, 0) + 1
+            
+            # Update account activity
+            if 'account' in event:
+                account = event.get('account')
+                if account not in self.account_activity:
+                    self.account_activity[account] = {
+                        'total_events': 0,
+                        'first_seen': datetime.now().isoformat(),
+                        'last_seen': datetime.now().isoformat(),
+                        'event_types': {}
+                    }
+                
+                self.account_activity[account]['total_events'] += 1
+                self.account_activity[account]['last_seen'] = datetime.now().isoformat()
+                
+                # Track event types for this account
+                self.account_activity[account]['event_types'][event_category] = \
+                    self.account_activity[account]['event_types'].get(event_category, 0) + 1
+            
+            # Update token activity
+            if 'token_name' in event:
+                token = event.get('token_name')
+                if token not in self.token_activity:
+                    self.token_activity[token] = {
+                        'total_events': 0,
+                        'first_seen': datetime.now().isoformat(),
+                        'last_seen': datetime.now().isoformat(),
+                        'event_types': {}
+                    }
+                
+                self.token_activity[token]['total_events'] += 1
+                self.token_activity[token]['last_seen'] = datetime.now().isoformat()
+                
+                # Track event types for this token
+                self.token_activity[token]['event_types'][event_category] = \
+                    self.token_activity[token]['event_types'].get(event_category, 0) + 1
+            
+            # Update collection activity
+            if 'collection_name' in event:
+                collection = event.get('collection_name')
+                if collection not in self.collection_activity:
+                    self.collection_activity[collection] = {
+                        'total_events': 0,
+                        'first_seen': datetime.now().isoformat(),
+                        'last_seen': datetime.now().isoformat(),
+                        'event_types': {}
+                    }
+                
+                self.collection_activity[collection]['total_events'] += 1
+                self.collection_activity[collection]['last_seen'] = datetime.now().isoformat()
+                
+                # Track event types for this collection
+                self.collection_activity[collection]['event_types'][event_category] = \
+                    self.collection_activity[collection]['event_types'].get(event_category, 0) + 1
+            
+            # Update time-based metrics
+            current_hour = datetime.now().hour
+            self.hourly_event_counts[current_hour] += 1
+            
+            current_day = datetime.now().weekday()
+            self.daily_event_counts[current_day] += 1
+            
+            # Update version history every minute
+            if time.time() - self.last_metrics_update > 60:
+                self.version_history.append({
+                    'timestamp': datetime.now().isoformat(),
+                    'version': self.last_processed_version
+                })
+                
+                # Keep only the last 1440 entries (24 hours at 1 per minute)
+                if len(self.version_history) > 1440:
+                    self.version_history = self.version_history[-1440:]
+                    
+                self.last_metrics_update = time.time()
+                
+        except Exception as e:
+            logger.error(f"Error updating metrics: {str(e)}")
+    
     def is_user_related_event(self, event):
         """Check if an event is related to user-monitored accounts, tokens, or collections.
         
@@ -352,11 +502,13 @@ class BlockchainMonitor:
             if 'event_type' in enriched:
                 event_type = enriched['event_type']
                 if '::token::TokenStore/deposit_events' in event_type:
-                    enriched['event_type'] = 'token_deposit'
+                    enriched['event_category'] = 'token_deposit'
                 elif '::token::TokenStore/withdraw_events' in event_type:
-                    enriched['event_type'] = 'token_withdrawal'
+                    enriched['event_category'] = 'token_withdrawal'
                 elif 'coin::CoinStore' in event_type:
-                    enriched['event_type'] = 'coin_transfer'
+                    enriched['event_category'] = 'coin_transfer'
+                else:
+                    enriched['event_category'] = 'other'
             
             # Add transaction URL
             if 'version' in enriched:
@@ -391,6 +543,14 @@ class BlockchainMonitor:
                 if 'amount' in data:
                     simplified_data['amount'] = data['amount']
                     enriched['amount'] = data['amount']
+                    
+                    # Convert amount to APT for coin transfers
+                    if enriched.get('event_category') == 'coin_transfer':
+                        try:
+                            amount_apt = float(data['amount']) / 100000000  # 8 decimal places for APT
+                            enriched['amount_apt'] = amount_apt
+                        except:
+                            pass
                 
                 # Extract other useful fields
                 for key in ['type', 'from', 'to', 'creator']:
@@ -399,6 +559,21 @@ class BlockchainMonitor:
             
             # Replace the complex data with simplified data
             enriched['details'] = simplified_data
+            
+            # Add a description for the event
+            if enriched.get('event_category') == 'token_deposit':
+                token_name = enriched.get('token_name', 'token')
+                collection = enriched.get('collection_name', 'collection')
+                enriched['description'] = f"Token deposit: {token_name} from {collection}"
+            elif enriched.get('event_category') == 'token_withdrawal':
+                token_name = enriched.get('token_name', 'token')
+                collection = enriched.get('collection_name', 'collection')
+                enriched['description'] = f"Token withdrawal: {token_name} from {collection}"
+            elif enriched.get('event_category') == 'coin_transfer':
+                amount_apt = enriched.get('amount_apt', 0)
+                enriched['description'] = f"Coin transfer: {amount_apt:.8f} APT"
+            else:
+                enriched['description'] = f"Blockchain event: {enriched.get('event_type', 'unknown')}"
             
             # Add importance score (all events are now considered significant)
             enriched['importance_score'] = 1.0
@@ -413,13 +588,23 @@ class BlockchainMonitor:
             clean_event = {
                 'id': enriched.get('id', ''),
                 'event_type': enriched.get('event_type', 'unknown'),
+                'event_category': enriched.get('event_category', 'other'),
                 'timestamp': enriched.get('timestamp', ''),
                 'account': enriched.get('account', ''),
                 'version': enriched.get('version', ''),
+                'description': enriched.get('description', ''),
                 'details': simplified_data,
                 'transaction_url': enriched.get('transaction_url', ''),
                 'account_url': enriched.get('account_url', '')
             }
+            
+            # Add token-specific fields if present
+            if 'token_name' in enriched:
+                clean_event['token_name'] = enriched['token_name']
+            if 'collection_name' in enriched:
+                clean_event['collection_name'] = enriched['collection_name']
+            if 'amount_apt' in enriched:
+                clean_event['amount_apt'] = enriched['amount_apt']
             
             # Convert to JSON-serializable format
             # This ensures that the event can be properly sent to the UI
@@ -429,19 +614,19 @@ class BlockchainMonitor:
             logger.error(f"Error enriching event: {str(e)}")
             return event
     
-    def start_monitoring(self):
+    async def start_monitoring(self):
         """Start monitoring blockchain events."""
         logger.info("Starting blockchain monitoring...")
         
         try:
             # Validate accounts of interest
-            valid_accounts = self.validate_accounts()
+            valid_accounts = await self.validate_accounts()
             if not valid_accounts:
                 logger.warning("No valid accounts to monitor")
                 raise Exception("No valid accounts to monitor")
             
             # Discover event handles
-            self.discover_event_handles()
+            await self.discover_event_handles()
             
             # Check if we have event handles to monitor
             if not self.event_handles:
@@ -457,8 +642,8 @@ class BlockchainMonitor:
             # Signal to the main application that it should fall back to polling
             raise Exception(f"Monitoring setup failed: {str(e)}")
     
-    def poll_for_events(self, discord_bot=None):
-        """Poll for events from the blockchain.
+    async def poll_for_events_async(self, discord_bot=None):
+        """Poll for events from the blockchain asynchronously.
         
         Args:
             discord_bot: Optional DiscordBot instance to post events to
@@ -469,14 +654,14 @@ class BlockchainMonitor:
         try:
             # Validate accounts if not already done
             if not self.validated_accounts:
-                self.validate_accounts()
+                await self.validate_accounts()
                 
             # Discover event handles if not already done
             if not self.event_handles:
-                self.discover_event_handles()
+                await self.discover_event_handles()
             
             # Fetch events from all event handles
-            events = self.fetch_events()
+            events = await self.fetch_events()
             
             if not events:
                 logger.info("No new events detected")
@@ -485,41 +670,71 @@ class BlockchainMonitor:
             logger.info(f"Processing {len(events)} events")
             
             # Process events to find significant ones
-            significant_events = []
-            processed_events = []
+            significant_events = self.process_events(events, discord_bot)
             
-            # Process each event
-            for event in events:
-                # Increment total events counter
-                self.events_processed_count += 1
+            # Update counters
+            self.significant_events_count += len(significant_events)
+            
+            # Add version to version history
+            if time.time() - self.last_metrics_update > 60:
+                self.version_history.append({
+                    'timestamp': datetime.now().isoformat(),
+                    'version': self.last_processed_version
+                })
                 
-                # Check if event is significant
-                is_significant = self._is_significant_event(event)
-                
-                # Enrich event with additional context
-                enriched_event = self._enrich_event(event)
-                
-                # Add to processed events list
-                processed_events.append(enriched_event)
-                
-                # If significant, add to list and increment counter
-                if is_significant:
-                    significant_events.append(enriched_event)
-                    self.significant_events_count += 1
+                # Keep only the last 1440 entries (24 hours at 1 per minute)
+                if len(self.version_history) > 1440:
+                    self.version_history = self.version_history[-1440:]
                     
-                    # Post to Discord if bot is provided
-                    if discord_bot:
-                        discord_bot.post_blockchain_event(enriched_event)
+                self.last_metrics_update = time.time()
             
-            # Update recent events list with all processed events
-            # Note: We already added events in fetch_events, so we don't need to do it again here
-            
-            logger.info(f"Found {len(significant_events)} significant events out of {len(processed_events)} total events")
+            logger.info(f"Found {len(significant_events)} significant events out of {len(events)} total events")
             return significant_events
             
         except Exception as e:
             logger.error(f"Error polling for events: {str(e)}")
             return []
+    
+    def poll_for_events(self, discord_bot=None):
+        """Poll for events from the blockchain.
+        
+        Args:
+            discord_bot: Optional DiscordBot instance to post events to
+            
+        Returns:
+            list: List of significant events
+        """
+        try:
+            # Use a simple synchronous approach to avoid event loop issues
+            import asyncio
+            
+            # Create a new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Run the async method and get the events
+                events = loop.run_until_complete(self.poll_for_events_async(discord_bot))
+                return events
+            finally:
+                # Always close the loop to prevent resource leaks
+                loop.close()
+                
+        except Exception as e:
+            logger.error(f"Error in poll_for_events: {str(e)}")
+            return []
+    
+    def _is_significant_event(self, event):
+        """Determine if an event is significant.
+        
+        Args:
+            event: The event to check
+            
+        Returns:
+            bool: True if the event is significant, False otherwise
+        """
+        # For now, consider all events significant
+        return True
     
     def stop(self):
         """Stop monitoring blockchain events."""

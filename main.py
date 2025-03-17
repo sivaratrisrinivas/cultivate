@@ -46,26 +46,29 @@ class AptosAI:
         
         # Flag to control sequential processing
         self.processing_event = False
+        
+        # Flag to control application running state
+        self.running = True
     
     def _init_modules(self):
-        """Initialize all application modules."""
+        """Initialize all application modules in the correct logical sequence."""
         logger.info("Initializing modules")
         
-        # Initialize blockchain monitor
+        # Step 1: Initialize blockchain monitor first as it's the data source
         self.blockchain_monitor = BlockchainMonitor(self.config)
         logger.info("Blockchain monitor initialized")
         
-        # Initialize AI module
+        # Step 2: Initialize AI module which will process data from blockchain monitor
         self.ai_module = AIModule(self.config)
         logger.info("AI module initialized")
         
-        # Initialize Discord bot
+        # Step 3: Initialize Discord bot which will use AI module to generate messages
         self.discord_bot = DiscordBot(self.config, self.ai_module)
         # Connect the blockchain monitor to the Discord bot
         self.discord_bot.set_blockchain_monitor(self.blockchain_monitor)
         logger.info("Discord bot initialized")
         
-        # Initialize API
+        # Step 4: Initialize API which will provide data to the frontend
         self._initialize_api()
         logger.info("API initialized")
     
@@ -127,10 +130,11 @@ class AptosAI:
             insights = self.ai_module.generate_insights(event)
             
             # Store the event and insights in the database
-            self.db.store_event(event, insights)
+            if hasattr(self, 'db'):
+                self.db.store_event(event, insights)
             
             # Check if this event should trigger a notification
-            if self._should_notify(event):
+            if hasattr(self, '_should_notify') and self._should_notify(event):
                 self._send_notification(event, insights)
                 
             return insights
@@ -139,33 +143,66 @@ class AptosAI:
             return None
     
     def _blockchain_worker(self):
-        """Worker function to poll for blockchain events."""
+        """Worker function for blockchain monitoring."""
         logger.info("Starting blockchain polling worker")
         
-        try:
-            # Register callback for blockchain events if not already registered
-            if not self.blockchain_monitor.event_callbacks:
-                self.blockchain_monitor.register_event_callback(self.process_blockchain_event)
-            
-            # Start polling for events
-            while True:
+        # Set up polling interval
+        polling_interval = self.config.BLOCKCHAIN["POLLING_INTERVAL"]
+        logger.info(f"Polling interval set to {polling_interval} seconds")
+        
+        # Track consecutive empty polls to implement adaptive polling
+        consecutive_empty_polls = 0
+        max_consecutive_empty = 5  # After this many empty polls, we'll increase the interval temporarily
+        
+        # Set blockchain monitor to running state
+        self.blockchain_monitor.running = True
+        
+        while self.blockchain_monitor.running:
+            try:
                 logger.info("Polling for blockchain events")
+                start_time = time.time()
                 
-                # Poll for events and pass the Discord bot for direct notifications
-                significant_events = self.blockchain_monitor.poll_for_events(discord_bot=self.discord_bot)
+                # Poll for events
+                events = self.blockchain_monitor.poll_for_events(self.discord_bot)
                 
-                if significant_events:
-                    logger.info(f"Found {len(significant_events)} significant events")
-                    # Events will be processed by the callback and sent to Discord
+                # Calculate time taken
+                elapsed = time.time() - start_time
+                logger.debug(f"Polling completed in {elapsed:.2f} seconds")
+                
+                if events:
+                    # Reset consecutive empty polls counter
+                    consecutive_empty_polls = 0
+                    
+                    # Process events
+                    logger.info(f"Found {len(events)} significant events")
+                    
+                    # Events are already processed by the blockchain monitor
+                    self.processing_event = False
                 else:
+                    # Increment consecutive empty polls counter
+                    consecutive_empty_polls += 1
                     logger.info("No significant events detected")
                 
-                # Wait before next poll
-                logger.info(f"Waiting for {self.config.BLOCKCHAIN['POLLING_INTERVAL']} seconds until next poll")
-                time.sleep(self.config.BLOCKCHAIN["POLLING_INTERVAL"])
+                # Adaptive polling: if we've had several empty polls, increase the interval temporarily
+                current_interval = polling_interval
+                if consecutive_empty_polls > max_consecutive_empty:
+                    # Increase interval by 50% but cap at 2x the base interval
+                    current_interval = min(polling_interval * 2, polling_interval * 1.5)
+                    logger.debug(f"Adaptive polling: increasing interval to {current_interval} seconds after {consecutive_empty_polls} empty polls")
                 
-        except Exception as e:
-            logger.error(f"Error in blockchain polling worker: {str(e)}")
+                # Wait for the next polling interval
+                logger.info(f"Waiting for {current_interval} seconds until next poll")
+                
+                # Use a loop with small sleeps to allow for clean shutdown
+                for _ in range(int(current_interval)):
+                    if not self.blockchain_monitor.running:
+                        break
+                    time.sleep(1)
+                    
+            except Exception as e:
+                logger.error(f"Error in blockchain worker: {str(e)}")
+                # Wait a bit before retrying after an error
+                time.sleep(5)
     
     def _api_worker(self):
         """Worker function to run the API server."""

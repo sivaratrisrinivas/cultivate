@@ -1,19 +1,32 @@
 /* Global Styles */
 :root {
     /* Modern complementary color scheme for dark mode */
-    --primary-color: #7F5AF0;    /* Purple - primary accent */
-    --secondary-color: #2CB67D;  /* Teal - secondary accent */
-    --warning-color: #F9C846;    /* Amber - warnings */
-    --danger-color: #E45858;     /* Red - errors/danger */
-    --dark-color: #16161A;       /* Very dark gray - background */
-    --dark-secondary: #242629;   /* Slightly lighter dark - cards */
-    --text-color: #FFFFFE;       /* Off-white - primary text */
-    --text-muted: #94A1B2;       /* Light gray - secondary text */
-    --light-color: #2CB67D;      /* Teal - highlights */
-    --border-color: #383A47;     /* Dark gray - borders */
-    --background-color: #16161A; /* Very dark gray - main background */
-    --card-background: #242629;  /* Slightly lighter dark - card background */
-    --hover-color: #2A2B37;      /* Slightly lighter than card bg - hover states */
+    --primary-color: #7F5AF0;
+    /* Purple - primary accent */
+    --secondary-color: #2CB67D;
+    /* Teal - secondary accent */
+    --warning-color: #F9C846;
+    /* Amber - warnings */
+    --danger-color: #E45858;
+    /* Red - errors/danger */
+    --dark-color: #16161A;
+    /* Very dark gray - background */
+    --dark-secondary: #242629;
+    /* Slightly lighter dark - cards */
+    --text-color: #FFFFFE;
+    /* Off-white - primary text */
+    --text-muted: #94A1B2;
+    /* Light gray - secondary text */
+    --light-color: #2CB67D;
+    /* Teal - highlights */
+    --border-color: #383A47;
+    /* Dark gray - borders */
+    --background-color: #16161A;
+    /* Very dark gray - main background */
+    --card-background: #242629;
+    /* Slightly lighter dark - card background */
+    --hover-color: #2A2B37;
+    /* Slightly lighter than card bg - hover states */
 }
 
 * {
@@ -50,12 +63,33 @@ header {
 .logo {
     display: flex;
     align-items: center;
-    gap: 12px;
 }
 
 .logo img {
     height: 40px;
     filter: drop-shadow(0 0 4px rgba(127, 90, 240, 0.5));
+}
+
+.header-title {
+    text-align: center;
+    flex-grow: 1;
+}
+
+.header-title h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-color);
+    margin-bottom: 5px;
+    background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.header-title p {
+    font-size: 14px;
+    color: var(--text-muted);
+    font-weight: 400;
 }
 
 .logo-text {
@@ -78,23 +112,57 @@ header {
     gap: 8px;
     font-size: 14px;
     font-weight: 500;
-    background-color: var(--dark-secondary);
-    padding: 8px 16px;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 8px 12px;
     border-radius: 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-left: auto;
+    transition: all 0.3s ease;
+}
+
+.status-indicator.online {
+    border: 1px solid #4CAF50;
+}
+
+.status-indicator.offline {
+    border: 1px solid #F44336;
 }
 
 .status-dot {
-    width: 10px;
-    height: 10px;
+    width: 12px;
+    height: 12px;
     border-radius: 50%;
-    background-color: var(--secondary-color);
-    box-shadow: 0 0 10px var(--secondary-color);
+    background-color: #333;
+    box-shadow: 0 0 5px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+.status-dot.online {
+    background-color: #4CAF50;
+    box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
 }
 
 .status-dot.offline {
-    background-color: var(--danger-color);
-    box-shadow: 0 0 10px var(--danger-color);
+    background-color: #F44336;
+    box-shadow: 0 0 8px rgba(244, 67, 54, 0.6);
+}
+
+.status-dot.pulse {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+    }
+
+    70% {
+        box-shadow: 0 0 0 5px rgba(76, 175, 80, 0);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+    }
 }
 
 /* Dashboard Layout */
@@ -107,20 +175,25 @@ header {
 .panel {
     background: var(--card-background);
     border-radius: 12px;
-    padding: 20px;
+    padding: 0;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
     height: 100%;
     border: 1px solid var(--border-color);
     overflow: hidden;
+    margin-bottom: 25px;
 }
 
 .panel h2 {
-    font-size: 18px;
-    margin-bottom: 20px;
-    color: var(--text-color);
+    padding: 20px;
+    margin: 0;
+    font-size: 1.2rem;
     display: flex;
     align-items: center;
     gap: 8px;
+    border-bottom: 1px solid var(--border-color);
+    background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+    color: white;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 .panel h2 i {
@@ -157,22 +230,26 @@ header {
 
 .metrics-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 20px;
-    padding: 20px;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 25px;
+    padding: 25px;
+    width: 100%;
 }
 
 .metric-card {
     background-color: var(--dark-secondary);
     border-radius: 12px;
-    padding: 20px;
+    padding: 25px;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     text-align: center;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     transition: all 0.3s ease;
     border: 1px solid var(--border-color);
+    height: 100%;
+    min-height: 180px;
 }
 
 .metric-card:hover {
@@ -182,8 +259,8 @@ header {
 }
 
 .metric-icon {
-    font-size: 1.8rem;
-    margin-bottom: 15px;
+    font-size: 2.5rem;
+    margin-bottom: 20px;
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -191,14 +268,14 @@ header {
 }
 
 .metric-value {
-    font-size: 2rem;
+    font-size: 2.8rem;
     font-weight: 700;
     color: var(--text-color);
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 
 .metric-label {
-    font-size: 0.9rem;
+    font-size: 1rem;
     color: var(--text-muted);
     font-weight: 500;
 }
@@ -206,16 +283,16 @@ header {
 .uptime-container {
     display: flex;
     justify-content: space-between;
-    padding: 15px 20px;
+    padding: 18px 25px;
     background-color: var(--dark-color);
     border-top: 1px solid var(--border-color);
     color: var(--text-muted);
-    font-size: 0.9rem;
+    font-size: 1rem;
 }
 
 .uptime-container i {
     color: var(--primary-color);
-    margin-right: 5px;
+    margin-right: 8px;
 }
 
 /* Control Panel */
@@ -354,6 +431,9 @@ header {
 }
 
 .events-panel h2 {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     padding: 20px;
     margin: 0;
     font-size: 1.2rem;
@@ -365,6 +445,7 @@ header {
 
 .events-panel h2 i {
     color: white;
+    margin-right: 8px;
 }
 
 .filter-controls {
@@ -439,136 +520,237 @@ header {
     background: var(--primary-color);
 }
 
+/* Modern Event List */
+.modern-event-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+}
+
+/* Modern Card Design */
+.modern-card {
+    background-color: var(--card-background);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s ease;
+    display: flex;
+    gap: 16px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.modern-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Event type specific styling */
+.event-type-token-deposit {
+    border-left-color: var(--secondary-color);
+}
+
+.event-type-token-withdrawal {
+    border-left-color: var(--warning-color);
+}
+
+.event-type-coin-transfer {
+    border-left-color: var(--light-color);
+}
+
+.event-type-large-transaction {
+    border-left-color: #FF6B6B;
+}
+
+.event-type-nft-sale {
+    border-left-color: #4ECDC4;
+}
+
+.event-type-liquidity-change {
+    border-left-color: #45B7D1;
+}
+
+.event-type-price-movement {
+    border-left-color: #FFE66D;
+}
+
+/* Event Icon */
+.event-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background-color: var(--primary-color);
+    border-radius: 50%;
+    color: white;
+    font-size: 18px;
+}
+
+.event-type-token-deposit .event-icon {
+    background-color: var(--secondary-color);
+}
+
+.event-type-token-withdrawal .event-icon {
+    background-color: var(--warning-color);
+}
+
+.event-type-coin-transfer .event-icon {
+    background-color: var(--light-color);
+}
+
+.event-type-large-transaction .event-icon {
+    background-color: #FF6B6B;
+}
+
+.event-type-nft-sale .event-icon {
+    background-color: #4ECDC4;
+}
+
+.event-type-liquidity-change .event-icon {
+    background-color: #45B7D1;
+}
+
+.event-type-price-movement .event-icon {
+    background-color: #FFE66D;
+    color: #333;
+}
+
+/* Event Content */
+.event-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Event Header */
+.event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.event-type {
+    font-weight: 600;
+    font-size: 16px;
+    color: var(--text-color);
+}
+
+.event-time {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+/* Event Account */
+.event-account {
+    font-size: 14px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+/* Event Details */
+.event-details {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.detail-highlight {
+    font-weight: 500;
+    color: var(--text-color);
+    font-size: 15px;
+}
+
+.detail-amount {
+    font-weight: 600;
+    color: var(--secondary-color);
+    font-size: 16px;
+}
+
+.event-description {
+    color: var(--text-color);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.other-details {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.detail-item {
+    background-color: var(--hover-color);
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+    display: flex;
+    gap: 4px;
+}
+
+.detail-key {
+    color: var(--text-muted);
+}
+
+.detail-value {
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+/* Event Actions */
+.event-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: auto;
+}
+
+.explorer-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color 0.2s ease;
+}
+
+.explorer-link:hover {
+    color: var(--secondary-color);
+    text-decoration: underline;
+}
+
+/* Empty State */
 .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 60px 20px;
-    color: var(--text-muted);
+    padding: 40px 20px;
     text-align: center;
-}
-
-.empty-state i {
-    font-size: 3rem;
-    margin-bottom: 20px;
-    color: var(--border-color);
-}
-
-.event-card {
-    background-color: var(--dark-secondary);
-    border-radius: 10px;
-    padding: 15px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    border: 1px solid var(--border-color);
-    transition: all 0.2s ease;
-    width: 100%;
-}
-
-.event-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-    border-color: var(--primary-color);
-}
-
-.event-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.event-type {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 5px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-    background-color: rgba(127, 90, 240, 0.2);
-    color: var(--primary-color);
-}
-
-.event-type.deposit {
-    background-color: rgba(44, 182, 125, 0.2);
-    color: var(--secondary-color);
-}
-
-.event-type.withdraw {
-    background-color: rgba(228, 88, 88, 0.2);
-    color: var(--danger-color);
-}
-
-.event-type.trade {
-    background-color: rgba(249, 200, 70, 0.2);
-    color: var(--warning-color);
-}
-
-.event-time {
-    font-size: 12px;
     color: var(--text-muted);
+    background-color: var(--card-background);
+    border-radius: 12px;
+    min-height: 200px;
 }
 
-.event-details {
-    margin-top: 10px;
+.empty-state .icon {
+    font-size: 48px;
+    margin-bottom: 16px;
 }
 
-.event-detail {
-    display: flex;
-    justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.event-detail:last-child {
-    border-bottom: none;
-}
-
-.detail-label {
-    color: var(--text-muted);
-    font-size: 13px;
-}
-
-.detail-value {
-    font-weight: 500;
+.empty-state h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
     color: var(--text-color);
-    font-size: 13px;
-    word-break: break-all;
 }
 
-.detail-value a {
-    color: var(--primary-color);
-    text-decoration: none;
-}
-
-.detail-value a:hover {
-    text-decoration: underline;
-}
-
-.event-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 15px;
-}
-
-.event-action {
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    background-color: var(--dark-color);
-    color: var(--text-muted);
-    border: 1px solid var(--border-color);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.event-action:hover {
-    background-color: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+.empty-state p {
+    font-size: 14px;
+    max-width: 300px;
 }
 
 /* Footer */
@@ -633,6 +815,7 @@ footer a:hover {
         transform: translateX(100%);
         opacity: 0;
     }
+
     to {
         transform: translateX(0);
         opacity: 1;
@@ -643,10 +826,41 @@ footer a:hover {
     from {
         opacity: 1;
     }
+
     to {
         opacity: 0;
         transform: translateY(10px);
     }
+}
+
+/* Refresh button styling */
+.refresh-btn {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    font-size: 0.9rem;
+    cursor: pointer;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    margin-left: 10px;
+}
+
+.refresh-btn:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: rotate(180deg);
+}
+
+.refresh-btn:active {
+    transform: scale(0.95) rotate(180deg);
+}
+
+.refresh-btn i {
+    margin: 0 !important;
 }
 
 /* Responsive Styles */
@@ -660,19 +874,42 @@ footer a:hover {
     header {
         flex-direction: column;
         gap: 15px;
-        align-items: flex-start;
+        align-items: center;
+        text-align: center;
     }
-    
+
+    .logo {
+        margin-bottom: 10px;
+    }
+
+    .header-title {
+        margin: 10px 0;
+    }
+
+    .header-title h1 {
+        font-size: 28px;
+    }
+
+    .header-title p {
+        font-size: 12px;
+    }
+
     .status-indicator {
-        align-self: flex-start;
+        margin: 0 auto;
     }
-    
+
     .control-buttons {
         flex-direction: column;
     }
-    
+
     .btn {
         width: 100%;
+    }
+}
+
+@media (max-width: 1200px) {
+    .metrics-grid {
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
@@ -680,8 +917,40 @@ footer a:hover {
     .metrics-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .filter-controls {
         flex-direction: column;
     }
+}
+
+/* System Status Styles */
+.system-status-container {
+    margin: 20px 0;
+    padding: 15px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+}
+
+.system-status-container h3 {
+    font-size: 16px;
+    margin-bottom: 10px;
+    color: #e0e0e0;
+}
+
+.system-status-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+}
+
+.status-label {
+    font-size: 14px;
+    color: #c0c0c0;
 }

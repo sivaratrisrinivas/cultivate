@@ -23,7 +23,7 @@ class DiscordBot:
         intents = discord.Intents.default()
         intents.message_content = True
         
-        self.bot = commands.Bot(command_prefix=config.DISCORD["PREFIX"], intents=intents)
+        self.bot = commands.Bot(command_prefix=config.DISCORD["PREFIX"], intents=intents, help_command=None)
         self.channel_id = config.DISCORD["CHANNEL_ID"]
         
         # Message queue for rate limiting
@@ -48,26 +48,225 @@ class DiscordBot:
         async def on_ready():
             """Handle bot ready event."""
             logger.info(f'Discord bot logged in as {self.bot.user}')
+            
+            # Start message queue processor
             self.process_message_queue.start()
         
         @self.bot.event
         async def on_message(message):
             """Handle incoming messages."""
-            # Ignore bot's own messages
+            # Ignore messages from the bot itself
             if message.author == self.bot.user:
                 return
-            
+                
             # Process commands first
             await self.bot.process_commands(message)
             
-            # Then handle potential questions
-            await self._handle_potential_question(message)
+            # Then handle regular messages
+            await self._handle_message(message)
         
-        # Register commands
-        self._register_commands()
-    
-    def _register_commands(self):
-        """Register bot commands."""
+        @self.bot.event
+        async def on_command_error(ctx, error):
+            """Handle command errors."""
+            if isinstance(error, commands.CommandNotFound):
+                logger.warning(f"Command not found: {ctx.message.content}")
+                return
+                
+            if isinstance(error, commands.MissingRequiredArgument):
+                logger.warning(f"Missing required argument: {error}")
+                await ctx.send(f"Missing required argument: {error.param.name}. Use `!help` for command usage.")
+                return
+                
+            if isinstance(error, commands.BadArgument):
+                logger.warning(f"Bad argument: {error}")
+                await ctx.send(f"Invalid argument: {error}. Use `!help` for command usage.")
+                return
+                
+            # Log other errors
+            logger.error(f"Command error: {error}")
+            await ctx.send("An error occurred while processing your command. Please try again later.")
+        
+        @self.bot.command(name='events')
+        async def events_command(ctx, count: int = 5):
+            """Show recent blockchain events.
+            
+            Args:
+                count: Number of events to show (default: 5)
+            """
+            if not self.blockchain_monitor:
+                await ctx.send("Blockchain monitor not available")
+                return
+                
+            # Limit count to a reasonable number
+            count = min(max(count, 1), 10)
+            
+            # Get recent events
+            recent_events = getattr(self.blockchain_monitor, 'recent_events', [])
+            
+            if not recent_events:
+                await ctx.send("No recent events available")
+                return
+                
+            # Get the most recent events
+            events_to_show = recent_events[-count:]
+            
+            # Create an embed for each event
+            for event in events_to_show:
+                event_category = event.get('event_category', 'unknown')
+                
+                # Generate insights using AI module
+                insights = self.ai_module.generate_insights(event)
+                
+                # Create Discord embed
+                embed = discord.Embed(
+                    title=insights["title"],
+                    description=insights["message"],
+                    color=self._get_color_for_event_type(event_category),
+                    timestamp=datetime.now()
+                )
+                
+                # Add fields with additional information
+                embed.add_field(name="Account", value=self._format_account_link(event.get("account", "Unknown"), event.get("account_url", "")), inline=True)
+                
+                # Add token information if available
+                if "token_name" in event:
+                    embed.add_field(name="Token", value=event["token_name"], inline=True)
+                    embed.add_field(name="Collection", value=event.get("collection_name", "Unknown"), inline=True)
+                    
+                # Add amount for coin transfers
+                if "amount_apt" in event:
+                    embed.add_field(name="Amount", value=f"{event['amount_apt']:.8f} APT", inline=True)
+                    
+                # Add transaction link if available
+                if "transaction_url" in event and event["transaction_url"]:
+                    embed.add_field(name="Transaction", value=f"[View on Explorer]({event['transaction_url']})", inline=False)
+                
+                await ctx.send(embed=embed)
+        
+        @self.bot.command(name='status')
+        async def status_command(ctx):
+            """Show blockchain monitor status."""
+            if not self.blockchain_monitor:
+                await ctx.send("Blockchain monitor not available")
+                return
+                
+            # Get status information
+            events_processed = getattr(self.blockchain_monitor, 'events_processed_count', 0)
+            significant_events = getattr(self.blockchain_monitor, 'significant_events_count', 0)
+            monitored_accounts = len(getattr(self.blockchain_monitor, 'validated_accounts', []))
+            event_handles = len(getattr(self.blockchain_monitor, 'event_handles', []))
+            last_version = getattr(self.blockchain_monitor, 'last_processed_version', 0)
+            
+            # Create status embed
+            embed = discord.Embed(
+                title="Blockchain Monitor Status",
+                description="Current status of the blockchain monitor",
+                color=discord.Color.blue(),
+                timestamp=datetime.now()
+            )
+            
+            embed.add_field(name="Events Processed", value=str(events_processed), inline=True)
+            embed.add_field(name="Significant Events", value=str(significant_events), inline=True)
+            embed.add_field(name="Monitored Accounts", value=str(monitored_accounts), inline=True)
+            embed.add_field(name="Event Handles", value=str(event_handles), inline=True)
+            embed.add_field(name="Last Processed Version", value=str(last_version), inline=True)
+            
+            await ctx.send(embed=embed)
+        
+        @self.bot.command(name='metrics')
+        async def metrics_command(ctx):
+            """Show blockchain metrics."""
+            if not self.blockchain_monitor:
+                await ctx.send("Blockchain monitor not available")
+                return
+                
+            # Get metrics information
+            event_types = getattr(self.blockchain_monitor, 'event_type_counts', {})
+            
+            # Create metrics embed
+            embed = discord.Embed(
+                title="Blockchain Metrics",
+                description="Current blockchain metrics",
+                color=discord.Color.gold(),
+                timestamp=datetime.now()
+            )
+            
+            # Add event type distribution
+            event_types_str = "\n".join([f"{k}: {v}" for k, v in event_types.items()])
+            if event_types_str:
+                embed.add_field(name="Event Types", value=event_types_str, inline=False)
+            else:
+                embed.add_field(name="Event Types", value="No events recorded yet", inline=False)
+            
+            await ctx.send(embed=embed)
+        
+        @self.bot.command(name='custom_help')
+        async def custom_help_command(ctx):
+            """Show help information."""
+            try:
+                logger.info(f"Custom help command invoked by {ctx.author}")
+                embed = discord.Embed(
+                    title="Cultivate - Aptos Blockchain Monitor",
+                    description="Welcome to Cultivate! This bot tracks and reports on Aptos blockchain events in real-time with AI-powered insights.",
+                    color=discord.Color.from_rgb(127, 90, 240),  # Using the primary color
+                    timestamp=datetime.now()
+                )
+                
+                # Add command information
+                embed.add_field(
+                    name="!events [count]", 
+                    value="Shows recent blockchain events. You can specify how many events to show (default: 5, max: 10).\n"
+                          "Example: `!events 3` shows the 3 most recent events.", 
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="!status", 
+                    value="Shows the current status of the blockchain monitor, including events processed, significant events, and monitored accounts.", 
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="!metrics", 
+                    value="Shows blockchain metrics, including event type distribution and other statistics.", 
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="!custom_help", 
+                    value="Shows this help message with command information.", 
+                    inline=False
+                )
+                
+                # Add usage instructions
+                embed.add_field(
+                    name="How to Use This Bot",
+                    value="1. Use this bot in the designated channel\n"
+                          "2. Type any of the commands listed above\n"
+                          "3. The bot will respond with real-time data from the Aptos blockchain\n"
+                          "4. You can interact with the data by clicking on account or transaction links",
+                    inline=False
+                )
+                
+                # Add footer with additional info
+                embed.set_footer(text="All data is fetched in real-time from the Aptos blockchain")
+                
+                await ctx.send(embed=embed)
+                logger.info("Custom help command executed successfully")
+            except Exception as e:
+                logger.error(f"Error executing custom_help command: {str(e)}")
+                await ctx.send("Sorry, there was an error displaying the help information. Please try again later.")
+        
+        @self.bot.command(name='help')
+        async def help_command(ctx):
+            """Redirect to custom help command."""
+            try:
+                logger.info(f"Help command invoked by {ctx.author}, redirecting to custom_help")
+                await custom_help_command(ctx)
+            except Exception as e:
+                logger.error(f"Error redirecting to custom_help command: {str(e)}")
+                await ctx.send("Sorry, there was an error displaying the help information. Please try again later.")
+        
         @self.bot.command(name='aptos')
         async def aptos_info(ctx):
             """Get information about Aptos blockchain."""
@@ -260,21 +459,6 @@ class DiscordBot:
             )
             await ctx.send(campaign_text)
         
-        @self.bot.command(name='status')
-        async def status(ctx):
-            """Check the bot status."""
-            uptime = datetime.now() - datetime.now()  # Replace with actual uptime calculation
-            hours, remainder = divmod(uptime.seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            
-            status_msg = (
-                f"**Bot Status**: Online\n"
-                f"**Uptime**: {hours}h {minutes}m {seconds}s\n"
-                f"**Events Processed**: {len(self.posted_events)}\n"
-                f"**Queue Size**: {self.message_queue.qsize()}"
-            )
-            await ctx.send(status_msg)
-        
         @self.bot.command(name='latest')
         async def latest(ctx):
             """Get the latest blockchain events."""
@@ -295,8 +479,12 @@ class DiscordBot:
                 
             await ctx.send("\n".join(response))
         
-    async def _handle_potential_question(self, message):
-        """Handle potential question in a message."""
+    async def _handle_message(self, message):
+        """Handle a regular message.
+        
+        Args:
+            message: Discord message object
+        """
         # Check if this is likely a question for the bot
         is_question = message.content.endswith('?')
         is_mention = self.bot.user in message.mentions
@@ -315,99 +503,153 @@ class DiscordBot:
             if response["confidence"] >= 0.5:
                 await message.reply(response["answer"])
     
+    async def send_webhook(self, embed, webhook_url):
+        """Send a message via webhook using aiohttp.
+        
+        Args:
+            embed: Discord embed to send
+            webhook_url: URL of the webhook to send to
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            import aiohttp
+            
+            # Create webhook payload
+            webhook_data = {
+                "embeds": [embed.to_dict()],
+                "username": "Aptos Blockchain Monitor"
+            }
+            
+            # Send webhook using aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.post(webhook_url, json=webhook_data) as response:
+                    if response.status == 204:
+                        logger.info(f"Successfully sent blockchain event via webhook: {embed.title}")
+                        return True
+                    else:
+                        logger.error(f"Failed to send webhook: HTTP {response.status}")
+                        return False
+        except Exception as webhook_error:
+            logger.error(f"Error sending via webhook: {str(webhook_error)}")
+            return False
+    
     def post_blockchain_event(self, event):
-        """Queue a blockchain event for posting to Discord.
+        """Post a blockchain event to Discord.
         
         Args:
             event (dict): Enriched blockchain event data
         """
-        # Generate insights using AI module
-        insights = self.ai_module.generate_insights(event)
-        
-        # Create a unique identifier for this event to avoid duplicates
-        event_id = f"{event.get('version', '')}-{event.get('event_handle', '')}-{event.get('field_name', '')}"
-        
-        # Check if we've already posted this event
-        if event_id in self.posted_events:
-            logger.info(f"Skipping already posted event: {event_id}")
-            return
+        try:
+            event_category = event.get('event_category', 'unknown')
+            logger.info(f"Processing blockchain event for Discord: {event_category}")
             
-        # Add to posted events set
-        self.posted_events.add(event_id)
+            # Generate insights using AI module or use fallback
+            try:
+                insights = self.ai_module.generate_insights(event)
+            except AttributeError as e:
+                logger.warning(f"Error generating insights: {str(e)}, using fallback")
+                # Fallback insights
+                insights = {
+                    "title": self._generate_fallback_title(event),
+                    "message": self._generate_fallback_message(event),
+                    "conversation_starter": "What do you think about this event?",
+                    "analysis": "No detailed analysis available."
+                }
+            
+            # Create Discord embed with a more conversational style
+            embed = discord.Embed(
+                title=insights["title"],
+                description=insights["message"],
+                color=self._get_color_for_event_type(event_category),
+                timestamp=datetime.now()
+            )
+            
+            # Add fields with additional information
+            embed.add_field(name="Account", value=self._format_account_link(event.get("account", "Unknown"), event.get("account_url", "")), inline=True)
+            
+            # Add token information if available
+            if "token_name" in event:
+                embed.add_field(name="Token", value=event["token_name"], inline=True)
+                embed.add_field(name="Collection", value=event.get("collection_name", "Unknown"), inline=True)
+                
+            # Add amount for coin transfers
+            if "amount_apt" in event:
+                embed.add_field(name="Amount", value=f"{event['amount_apt']:.8f} APT", inline=True)
+                
+            # Add transaction link if available
+            if "transaction_url" in event and event["transaction_url"]:
+                embed.add_field(name="Transaction", value=f"[View on Explorer]({event['transaction_url']})", inline=False)
+                
+            # Add the conversation starter as a field
+            conversation_starter = insights.get("conversation_starter", "What do you think about this?")
+            embed.add_field(name="💬 Let's chat!", value=conversation_starter, inline=False)
+                
+            # Add footer with analysis
+            if "analysis" in insights:
+                embed.set_footer(text=insights["analysis"])
+            
+            # Send via webhook (preferred method)
+            webhook_url = self.config.DISCORD_NOTIFICATIONS.get("WEBHOOK_URL")
+            if webhook_url:
+                # Use the bot's event loop if available
+                if hasattr(self.bot, 'loop') and self.bot.loop and self.bot.loop.is_running():
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.send_webhook(embed, webhook_url), 
+                        self.bot.loop
+                    )
+                    try:
+                        # Wait for the result with a timeout
+                        if future.result(timeout=10):
+                            return  # Successfully sent via webhook
+                    except Exception as e:
+                        logger.error(f"Error waiting for webhook result: {str(e)}")
+                else:
+                    # Create a new event loop if the bot's loop is not available
+                    try:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        if loop.run_until_complete(self.send_webhook(embed, webhook_url)):
+                            loop.close()
+                            return  # Successfully sent via webhook
+                        loop.close()
+                    except Exception as e:
+                        logger.error(f"Error with webhook in new event loop: {str(e)}")
+            
+            # Fallback to bot if webhook fails and bot is running
+            if hasattr(self.bot, 'loop') and self.bot.loop and self.bot.loop.is_running():
+                asyncio.run_coroutine_threadsafe(self.message_queue.put(embed), self.bot.loop)
+                logger.info(f"Queued blockchain event for posting via bot: {event_category}")
+            else:
+                logger.warning("Cannot send message: Discord bot not running and webhook failed")
+                
+        except Exception as e:
+            logger.error(f"Error in post_blockchain_event: {str(e)}")
+            logger.exception("Full exception details:")
+    
+    def _format_account_link(self, account, account_url):
+        """Format an account link for Discord embed.
         
-        # Limit the size of posted_events to prevent memory issues
-        if len(self.posted_events) > 1000:
-            # Remove oldest entries
-            self.posted_events = set(list(self.posted_events)[-500:])
+        Args:
+            account (str): Account address
+            account_url (str): URL to the account on explorer
             
-        # Create Discord embed with a more conversational style
-        embed = discord.Embed(
-            title=insights["title"],
-            description=insights["message"],
-            color=self._get_color_for_event_type(event.get("event_category", "other")),
-            timestamp=datetime.now()
-        )
+        Returns:
+            str: Formatted account link
+        """
+        if not account:
+            return "Unknown Account"
+            
+        # Format the account address to be shorter
+        short_account = account[:8] + '...' + account[-4:] if len(account) > 12 else account
         
-        # Add a random conversation starter or question based on event type
-        conversation_starters = {
-            "nft_mint": [
-                "What do you think of this new NFT? 🤔",
-                "Anyone planning to collect from this series? 🖼️",
-                "This artwork caught my eye! What about you? 👀"
-            ],
-            "nft_transfer": [
-                "Interesting NFT movement! Any thoughts on why? 🧐",
-                "NFT trading is heating up! Anyone else noticing this trend? 📈",
-                "This collection seems to be getting attention! Are you following it? 👀"
-            ],
-            "coin_transfer": [
-                "That's some APT on the move! Market signal or just regular activity? 💰",
-                "What do you make of this transaction? Important or routine? 🤔",
-                "Anyone else watching these fund movements? What's your take? 💭"
-            ],
-            "collection_creation": [
-                "New collection alert! Anyone planning to check it out? 🚀",
-                "Fresh creative work on Aptos! What kind of collections excite you? 🎨",
-                "New collections are always exciting! What are you looking forward to? ✨"
-            ],
-            "other": [
-                "What's everyone's take on this? 💬",
-                "Interesting blockchain activity! Thoughts? 🤔",
-                "Anyone following this kind of activity on Aptos? 👀"
-            ]
-        }
-        
-        # Select a random conversation starter based on event type
-        event_category = event.get("event_category", "other")
-        starters = conversation_starters.get(event_category, conversation_starters["other"])
-        conversation_starter = random.choice(starters)
-        
-        # Add fields with additional information
-        embed.add_field(name="Account", value=event.get("account", "Unknown"), inline=True)
-        
-        # Add token information if available
-        if "token_name" in event:
-            embed.add_field(name="Token", value=event["token_name"], inline=True)
-            embed.add_field(name="Collection", value=event.get("collection_name", "Unknown"), inline=True)
-            
-        # Add amount for coin transfers
-        if "amount_apt" in event:
-            embed.add_field(name="Amount", value=f"{event['amount_apt']:.8f} APT", inline=True)
-            
-        # Add transaction link if available
-        if "transaction_url" in event and event["transaction_url"]:
-            embed.add_field(name="Transaction", value=f"[View on Explorer]({event['transaction_url']})", inline=False)
-            
-        # Add the conversation starter as a field
-        embed.add_field(name="💬 Let's chat!", value=conversation_starter, inline=False)
-            
-        # Add footer with analysis
-        if "analysis" in insights:
-            embed.set_footer(text=insights["analysis"])
-            
-        # Queue the message for posting
-        asyncio.run_coroutine_threadsafe(self.message_queue.put(embed), self.bot.loop)
-        logger.info(f"Queued blockchain event for posting: {event.get('event_category', 'unknown')}")
+        # Check if the account URL is valid
+        if account_url and account_url.startswith('http'):
+            # Add a note about potential "account not found" message
+            return f"[{short_account}]({account_url})\n(Note: New accounts may show as 'not found' on explorer)"
+        else:
+            return short_account
     
     def _get_color_for_event_type(self, event_type):
         """Get Discord embed color based on event type."""
@@ -457,4 +699,114 @@ class DiscordBot:
     def run(self):
         """Run the Discord bot."""
         logger.info("Starting Discord bot")
-        self.bot.run(self.config.DISCORD["BOT_TOKEN"])
+        try:
+            self.bot.run(self.config.DISCORD["BOT_TOKEN"])
+        except Exception as e:
+            logger.error(f"Error starting Discord bot: {str(e)}")
+            # If the token is invalid, log a more helpful message
+            if "improper token" in str(e).lower() or "401: unauthorized" in str(e).lower():
+                logger.error("Discord bot token appears to be invalid. Please check your DISCORD_BOT_TOKEN in the .env file.")
+            # Continue running the application without the Discord bot
+            logger.info("Application will continue running without Discord bot functionality")
+    
+    def _generate_fallback_title(self, event):
+        """Generate a fallback title for an event.
+        
+        Args:
+            event (dict): Blockchain event data
+            
+        Returns:
+            str: Fallback title for the event
+        """
+        event_category = event.get('event_category', 'unknown')
+        
+        if event_category == 'token_deposit':
+            token_name = event.get('token_name', 'Unknown Token')
+            return f"Token Deposit: {token_name}"
+            
+        elif event_category == 'token_withdrawal':
+            token_name = event.get('token_name', 'Unknown Token')
+            return f"Token Withdrawal: {token_name}"
+            
+        elif event_category == 'coin_transfer':
+            amount = event.get('amount_apt', 0)
+            return f"Coin Transfer: {amount:.2f} APT"
+            
+        elif event_category == 'nft_sale':
+            token_name = event.get('token_name', 'Unknown NFT')
+            amount = event.get('amount_apt', 0)
+            return f"NFT Sale: {token_name} for {amount:.2f} APT"
+            
+        elif event_category == 'liquidity_change':
+            pool = event.get('pool_name', 'Unknown Pool')
+            return f"Liquidity Change in {pool} Pool"
+            
+        elif event_category == 'price_movement':
+            token = event.get('token_name', 'Unknown Token')
+            return f"Price Movement: {token}"
+            
+        elif event_category == 'large_transaction':
+            amount = event.get('amount_apt', 0)
+            return f"Large Transaction: {amount:.2f} APT"
+            
+        else:
+            return f"Blockchain Event: {event_category.replace('_', ' ').title()}"
+    
+    def _generate_fallback_message(self, event):
+        """Generate a fallback message for an event.
+        
+        Args:
+            event (dict): Blockchain event data
+            
+        Returns:
+            str: Fallback message for the event
+        """
+        # Use the description if available
+        if event.get('description'):
+            return event.get('description')
+            
+        event_category = event.get('event_category', 'unknown')
+        
+        if event_category == 'token_deposit':
+            token_name = event.get('token_name', 'Unknown Token')
+            account = event.get('account', 'Unknown Account')
+            short_account = account[:6] + '...' + account[-4:] if len(account) > 10 else account
+            return f"A token deposit of {token_name} was detected to account {short_account}."
+            
+        elif event_category == 'token_withdrawal':
+            token_name = event.get('token_name', 'Unknown Token')
+            account = event.get('account', 'Unknown Account')
+            short_account = account[:6] + '...' + account[-4:] if len(account) > 10 else account
+            return f"A token withdrawal of {token_name} was detected from account {short_account}."
+            
+        elif event_category == 'coin_transfer':
+            amount = event.get('amount_apt', 0)
+            from_account = event.get('from_account', 'Unknown Account')
+            to_account = event.get('to_account', 'Unknown Account')
+            short_from = from_account[:6] + '...' + from_account[-4:] if len(from_account) > 10 else from_account
+            short_to = to_account[:6] + '...' + to_account[-4:] if len(to_account) > 10 else to_account
+            return f"A coin transfer of {amount:.2f} APT was detected from {short_from} to {short_to}."
+            
+        elif event_category == 'nft_sale':
+            token_name = event.get('token_name', 'Unknown NFT')
+            amount = event.get('amount_apt', 0)
+            return f"An NFT sale of {token_name} for {amount:.2f} APT was detected."
+            
+        elif event_category == 'liquidity_change':
+            pool = event.get('pool_name', 'Unknown Pool')
+            change = event.get('change_percentage', 0)
+            action = "added to" if change > 0 else "removed from"
+            return f"Liquidity was {action} the {pool} pool by {abs(change):.2f}%."
+            
+        elif event_category == 'price_movement':
+            token = event.get('token_name', 'Unknown Token')
+            change = event.get('change_percentage', 0)
+            direction = "up" if change > 0 else "down"
+            return f"The price of {token} moved {direction} by {abs(change):.2f}% in the last hour."
+            
+        elif event_category == 'large_transaction':
+            amount = event.get('amount_apt', 0)
+            return f"A large transaction of {amount:.2f} APT was detected."
+            
+        else:
+            return f"A blockchain event of type {event_category.replace('_', ' ').title()} was detected."
