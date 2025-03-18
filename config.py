@@ -32,7 +32,11 @@ class Config:
         "API_KEY": os.getenv('XAI_API_KEY'),
         "API_URL": os.getenv('XAI_API_URL', 'https://api.x.ai/v1'),
         "MODEL": os.getenv('GROK_MODEL', 'grok-2-latest'),
-        "TEMPERATURE": float(os.getenv('AI_TEMPERATURE', 0.7))
+        "TEMPERATURE": float(os.getenv('AI_TEMPERATURE', 0.7)),
+        "MAX_DAILY_CALLS": int(os.getenv('MAX_DAILY_AI_CALLS', 100)),  # Limit daily API calls
+        "RATE_LIMIT_CALLS": int(os.getenv('RATE_LIMIT_CALLS', 10)),  # Calls in time period
+        "RATE_LIMIT_PERIOD": int(os.getenv('RATE_LIMIT_PERIOD', 60)),  # Period in seconds
+        "CACHE_DURATION": int(os.getenv('AI_CACHE_DURATION', 3600))  # Cache results for 1 hour
     }
     
     # API configuration

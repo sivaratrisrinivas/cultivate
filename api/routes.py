@@ -546,52 +546,83 @@ class TestEventsResource(Resource):
 class PageLoadResource(Resource):
     """Resource for handling page load events."""
     
-    # Keep track of the last posted event ID to avoid duplicates
-    last_posted_event_id = None
+    # Keep track of the last processed time to limit processing frequency
+    last_processed_time = datetime.now()
+    active_user_count = 0
     
     def post(self):
-        """Handle page load event and send a single event to Discord."""
-        if not _blockchain_monitor or not _discord_bot:
-            return {"error": "Blockchain monitor or Discord bot not initialized"}, 500
-            
+        """Handle page load event and trigger blockchain events processing."""
+        if not _blockchain_monitor or not _ai_module or not _discord_bot:
+            return {"error": "API not fully initialized"}, 500
+        
         try:
-            # Get the most recent event from the blockchain monitor
-            recent_events = getattr(_blockchain_monitor, 'recent_events', [])
+            current_time = datetime.now()
+            time_diff = (current_time - self.last_processed_time).total_seconds()
+            client_ip = request.remote_addr
+            user_agent = request.headers.get('User-Agent', 'Unknown')
             
-            if recent_events:
-                # Get the most recent event
-                most_recent_event = recent_events[-1]
+            # Increment active user count
+            PageLoadResource.active_user_count += 1
+            
+            # Log page load
+            logger.info(f"Page load from {client_ip} with agent {user_agent}")
+            
+            # Only process events if it's been more than 5 minutes since last process
+            # and we have active users
+            should_process = time_diff > 300 and PageLoadResource.active_user_count > 0
+            
+            if should_process:
+                # Reset timer
+                PageLoadResource.last_processed_time = current_time
                 
-                # Check if this event has already been posted
-                event_id = most_recent_event.get('id', '')
-                if event_id == PageLoadResource.last_posted_event_id:
-                    return {
-                        "success": True,
-                        "message": "Event already posted, skipping duplicate",
-                        "event": most_recent_event
-                    }
+                # Process events in a non-blocking way
+                import threading
+                threading.Thread(
+                    target=self._process_events_thread,
+                    args=(_blockchain_monitor, _discord_bot),
+                    daemon=True
+                ).start()
                 
-                # Post event to Discord
-                _discord_bot.post_blockchain_event(most_recent_event)
-                logger.info(f"Posted most recent event to Discord on page load: {most_recent_event.get('event_category', 'unknown')}")
-                
-                # Update the last posted event ID
-                PageLoadResource.last_posted_event_id = event_id
-                
-                return {
-                    "success": True,
-                    "message": "Posted most recent event to Discord",
-                    "event": most_recent_event
-                }
+                logger.info("Triggered blockchain events processing due to page load")
+                process_status = "processing_triggered"
             else:
-                return {
-                    "success": False,
-                    "message": "No events available to post"
-                }
+                logger.info(f"Skipping blockchain processing (last process: {time_diff:.0f} seconds ago)")
+                process_status = "skipped"
+            
+            return {
+                "success": True,
+                "active_users": PageLoadResource.active_user_count,
+                "processing_status": process_status,
+                "message": "Page load registered"
+            }
             
         except Exception as e:
-            logger.error(f"Error handling page load event: {str(e)}")
+            logger.error(f"Error handling page load: {str(e)}")
             return {"error": str(e)}, 500
+    
+    def _process_events_thread(self, blockchain_monitor, discord_bot):
+        """Process blockchain events in a separate thread."""
+        try:
+            logger.info("Starting blockchain events processing thread")
+            
+            # Poll for events
+            events = blockchain_monitor.poll_for_events(discord_bot)
+            
+            if events:
+                logger.info(f"Processed {len(events)} events from user page load trigger")
+            else:
+                logger.info("No new events found from user page load trigger")
+                
+        except Exception as e:
+            logger.error(f"Error in blockchain processing thread: {str(e)}")
+    
+    def get(self):
+        """Get current active user count."""
+        return {
+            "active_users": PageLoadResource.active_user_count,
+            "last_processed": PageLoadResource.last_processed_time.isoformat(),
+            "timestamp": datetime.now().isoformat()
+        }
 
 class DiscordTestResource(Resource):
     """Resource for testing Discord connection."""

@@ -286,69 +286,88 @@ class BlockchainMonitor:
             return 0
     
     def process_events(self, events, discord_bot=None):
-        """Process events to find significant ones.
+        """Process blockchain events and trigger registered callbacks.
         
         Args:
-            events: List of events to process
-            discord_bot: Optional DiscordBot instance to post events to
-            
+            events: List of blockchain events
+            discord_bot: Optional Discord bot instance for notifications
+        
         Returns:
-            list: List of significant events
+            List of processed significant events
         """
         significant_events = []
+        processed_event_ids = set()
         
-        if not events:
-            return significant_events
+        try:
+            for event in events:
+                try:
+                    # Generate a unique ID for this event
+                    event_id = None
+                    if 'version' in event and 'sequence_number' in event:
+                        event_id = f"{event['version']}_{event['sequence_number']}"
+                    elif 'transaction_version' in event:
+                        event_id = f"{event['transaction_version']}"
+                    else:
+                        # Use any unique identifiers available
+                        import hashlib
+                        event_str = str(sorted(event.items()))
+                        event_id = hashlib.md5(event_str.encode()).hexdigest()
+                    
+                    # Skip if we've already processed this event
+                    if event_id in processed_event_ids:
+                        logger.debug(f"Skipping duplicate event with ID: {event_id}")
+                        continue
+                    
+                    # Add to processed events
+                    processed_event_ids.add(event_id)
+                    
+                    # Update last processed version if higher than current one
+                    event_version = int(event.get('version', 0))
+                    if event_version > self.last_processed_version:
+                        self.last_processed_version = event_version
+                        self._save_last_processed_version(event_version)
+                    
+                    # Check if the event is significant
+                    if self._is_significant_event(event):
+                        logger.info(f"Significant event found: {event.get('type', 'unknown')}")
+                        
+                        # Enrich the event with additional information
+                        enriched_event = self._enrich_event(event)
+                        
+                        # Update metrics for this event
+                        self._update_metrics(enriched_event)
+                        
+                        # Add to list of significant events
+                        significant_events.append(enriched_event)
+                        
+                        # Add to recent events list, keeping only the most recent 100
+                        self.recent_events.append(enriched_event)
+                        if len(self.recent_events) > 100:
+                            self.recent_events = self.recent_events[-100:]
+                        
+                        # Trigger Discord notification if a Discord bot is provided
+                        if discord_bot:
+                            logger.info(f"Sending event to Discord bot: {enriched_event.get('event_category', 'unknown')}")
+                            discord_bot.post_blockchain_event(enriched_event)
+                        
+                        # Trigger registered callbacks
+                        for callback in self.event_callbacks:
+                            try:
+                                callback(enriched_event)
+                            except Exception as callback_error:
+                                logger.error(f"Error in callback {callback.__name__}: {str(callback_error)}")
+                                
+                except Exception as event_error:
+                    logger.error(f"Error processing individual event: {str(event_error)}")
+                    continue
+                    
+            # Update significant events count
+            self.significant_events_count += len(significant_events)
             
-        # Log the number of events being processed
-        logger.info(f"Processing {len(events)} events")
-        
-        # Increment events processed count
-        self.events_processed_count += len(events)
-        logger.info(f"Updated events_processed_count to {self.events_processed_count}")
-        
-        for event in events:
-            try:
-                # Get event type
-                event_type = event.get('type', 'unknown')
-                logger.info(f"Processing event: {event_type}")
-                
-                # Enrich event with additional information
-                enriched_event = self._enrich_event(event)
-                
-                # Store event
-                if enriched_event not in self.recent_events:
-                    self.recent_events.append(enriched_event)
-                
-                # Limit events list size
-                if len(self.recent_events) > 100:
-                    self.recent_events = self.recent_events[-100:]
-                
-                # Update metrics
-                self._update_metrics(enriched_event)
-                
-                # Check if this event is related to a monitored account
-                is_user_related = self.is_user_related_event(enriched_event)
-                
-                # Only send to Discord if it's related to a user-monitored account
-                if is_user_related:
-                    significant_events.append(enriched_event)
-                    # Increment significant events count
-                    self.significant_events_count += 1
-                    logger.info(f"Updated significant_events_count to {self.significant_events_count}")
-                    
-                    # Send to Discord if available
-                    if discord_bot:
-                        logger.info(f"Sending event to Discord: {event_type}")
-                        discord_bot.post_blockchain_event(enriched_event)
-                    
-            except Exception as e:
-                logger.error(f"Error processing event: {str(e)}")
-                
-        # Log the final metrics after processing all events
-        logger.info(f"After processing: events_processed_count={self.events_processed_count}, significant_events_count={self.significant_events_count}")
-        
-        return significant_events
+            return significant_events
+        except Exception as e:
+            logger.error(f"Error processing events: {str(e)}")
+            return []
     
     def _update_metrics(self, event):
         """Update metrics based on an event.

@@ -8,6 +8,7 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from utils.logger import get_logger
 from utils.cache import Cache
+import hashlib
 
 # Define emoji pattern for removing emojis from text
 emoji_pattern = re.compile("["
@@ -37,6 +38,11 @@ class AIModule:
         self.api_url = config.AI["API_URL"]
         self.model = config.AI["MODEL"]
         self.temperature = config.AI["TEMPERATURE"]
+        
+        # Initialize API rate limiting
+        self.api_calls_today = 0
+        self.api_call_timestamps = []  # Store timestamps of recent calls
+        self.last_day_reset = datetime.now().date()
         
         # Ensure directories exist
         os.makedirs("data", exist_ok=True)
@@ -97,6 +103,43 @@ class AIModule:
             str: Generated text from the AI, or None if an error occurred
         """
         try:
+            # First, check cache
+            cache_key = f"ai_{hashlib.md5((system_prompt + user_prompt).encode()).hexdigest()}"
+            cached_result = cache.get(cache_key)
+            if cached_result:
+                logger.info("Using cached AI response")
+                return cached_result
+            
+            # Check rate limits
+            current_time = datetime.now()
+            
+            # Reset daily counter if it's a new day
+            if current_time.date() != self.last_day_reset:
+                self.last_day_reset = current_time.date()
+                self.api_calls_today = 0
+                logger.info("Resetting daily API call counter")
+            
+            # Check if we've exceeded daily limit
+            if self.api_calls_today >= self.config.AI["MAX_DAILY_CALLS"]:
+                logger.warning(f"Daily API call limit exceeded: {self.api_calls_today}/{self.config.AI['MAX_DAILY_CALLS']}")
+                return None
+            
+            # Check rate limit within the time period
+            rate_limit_period = self.config.AI["RATE_LIMIT_PERIOD"]
+            rate_limit_calls = self.config.AI["RATE_LIMIT_CALLS"]
+            
+            # Remove timestamps older than the rate limit period
+            self.api_call_timestamps = [ts for ts in self.api_call_timestamps 
+                                       if (current_time - ts).total_seconds() < rate_limit_period]
+            
+            # Check if we've exceeded the rate limit
+            if len(self.api_call_timestamps) >= rate_limit_calls:
+                # Find the oldest call in our window and calculate when we can make another request
+                oldest_call = min(self.api_call_timestamps)
+                wait_time = rate_limit_period - (current_time - oldest_call).total_seconds()
+                logger.warning(f"Rate limit reached. Need to wait {wait_time:.1f} seconds for next API call")
+                return None
+            
             import requests
             
             # Prepare the API request
@@ -117,7 +160,13 @@ class AIModule:
             }
             
             # Make the API request with timeout
+            logger.info("Making API request to X.AI...")
             response = requests.post(url, headers=headers, json=data, timeout=10)
+            
+            # Update rate limit tracking
+            self.api_call_timestamps.append(current_time)
+            self.api_calls_today += 1
+            logger.info(f"API call count today: {self.api_calls_today}/{self.config.AI['MAX_DAILY_CALLS']}")
             
             # Check if the request was successful
             if response.status_code == 200:
@@ -125,7 +174,12 @@ class AIModule:
                 
                 # Extract the generated text
                 if response_data.get("choices") and len(response_data["choices"]) > 0:
-                    return response_data["choices"][0]["message"]["content"]
+                    result = response_data["choices"][0]["message"]["content"]
+                    
+                    # Cache the result
+                    cache.set(cache_key, result, ttl=self.config.AI["CACHE_DURATION"])
+                    
+                    return result
                 else:
                     logger.error("No choices in API response")
                     return None
@@ -556,163 +610,149 @@ class AIModule:
         return img
 
     def generate_insights(self, event):
-        """Generate insights for a blockchain event.
+        """Generate AI-powered insights for a blockchain event.
         
         Args:
-            event (dict): Blockchain event data
+            event: Blockchain event data
             
         Returns:
-            dict: Generated insights including title, message, and conversation starter
+            dict: Object with title, message, and other insights
         """
-        logger.info(f"Generating insights for event: {event.get('event_category', 'unknown')}")
-        
-        # Default insights in case AI generation fails
-        default_insights = {
-            "title": self._get_default_title(event),
-            "message": self._get_default_message(event),
-            "conversation_starter": "What do you think about this event?",
-            "analysis": "No detailed analysis available."
-        }
-        
         try:
-            # Skip AI for test events if configured to do so
-            if event.get('is_test', False) and not self.config.AI.get("PROCESS_TEST_EVENTS", False):
-                logger.info("Skipping AI processing for test event")
-                return default_insights
-                
-            logger.info("Calling X.AI API to generate insights")
+            cached_result = cache.get(f"insights_{str(event.get('version', ''))}")
+            if cached_result:
+                return cached_result
             
-            # Prepare system prompt
-            system_prompt = """You are a friendly and knowledgeable blockchain community manager for Aptos.
-Your job is to engage with users about blockchain events in a conversational way.
-Be casual, direct, and use simple language. DO NOT use emojis.
-Keep your messages concise, interactive, and witty.
-DO NOT include hashtags (like #Aptos or #NFT) in your messages.
-Focus on explaining what happened in the event and why it might be interesting or important.
-End with a question to encourage discussion."""
+            # Get event category and data
+            event_category = event.get('event_category', 'unknown')
+            event_type = event.get('type', 'unknown')
             
-            # Prepare user prompt with event details
-            user_prompt = f"Here's a blockchain event on Aptos:\n\nEvent Type: {event.get('event_category', 'Unknown')}\n"
+            # Create a detailed context
+            address = event.get('account', '')
             
-            # Add relevant event details based on event type
-            if event.get('event_category') == 'token_deposit' or event.get('event_category') == 'token_withdrawal':
-                user_prompt += f"Token: {event.get('token_name', 'Unknown')}\n"
-                user_prompt += f"Collection: {event.get('collection_name', 'Unknown')}\n"
-                user_prompt += f"Account: {event.get('account', 'Unknown')}\n"
-                
-            elif event.get('event_category') == 'coin_transfer':
-                user_prompt += f"Amount: {event.get('amount_apt', 0)} APT\n"
-                user_prompt += f"From: {event.get('from_account', 'Unknown')}\n"
-                user_prompt += f"To: {event.get('to_account', 'Unknown')}\n"
-                
-            elif event.get('event_category') == 'nft_sale':
-                user_prompt += f"NFT: {event.get('token_name', 'Unknown')}\n"
-                user_prompt += f"Collection: {event.get('collection_name', 'Unknown')}\n"
-                user_prompt += f"Price: {event.get('amount_apt', 0)} APT\n"
-                
-            elif event.get('event_category') == 'liquidity_change':
-                user_prompt += f"Pool: {event.get('pool_name', 'Unknown')}\n"
-                user_prompt += f"Change: {event.get('change_percentage', 0)}%\n"
-                user_prompt += f"Action: {event.get('action', 'Unknown')}\n"
-                
-            elif event.get('event_category') == 'price_movement':
-                user_prompt += f"Token: {event.get('token_name', 'Unknown')}\n"
-                user_prompt += f"Change: {event.get('change_percentage', 0)}%\n"
-                user_prompt += f"Direction: {event.get('direction', 'Unknown')}\n"
-                
-            # Add description if available
-            if event.get('description'):
-                user_prompt += f"\nDescription: {event.get('description')}\n"
-                
-            # Add transaction link if available
-            if event.get('transaction_url'):
-                user_prompt += f"\nTransaction: {event.get('transaction_url')}\n"
-                
-            user_prompt += "\nPlease generate:\n1. A short title for this event (max 50 chars)\n2. A concise, witty message about this event without emojis (max 280 chars)\n3. A conversation starter question\n4. A brief analysis of what this might mean"
+            # Check if address should be shortened
+            if len(address) > 20:
+                # Keep the first 6 and last 4 characters
+                short_address = f"{address[:6]}...{address[-4:]}"
+            else:
+                short_address = address
             
-            # Call the AI API
-            logger.info(f"Making API request to X.AI with model: {self.config.AI['MODEL']}")
-            response = self._call_ai_api(system_prompt, user_prompt)
+            # Special system prompt for "retarded" social media style
+            system_prompt = """You're X.AI responding to blockchain activity on Aptos. Your goal is to create INTENTIONALLY silly, over-the-top, and exaggerated reactions to these events - like someone who doesn't truly understand crypto but is EXTREMELY excited about it.
+
+Use ALL CAPS randomly, excessive emojis 🤪🚀🤑, misuse crypto terms, make outlandish predictions, use terrible puns, and write in an energetic but confused way. Include spelling mistakes and poor grammar occasionally. Use phrases like "to the moon", "diamond hands", "wagmi", "ngmi", "ser", "wen lambo", "wen moon", "fren", etc.
+
+Be RIDICULOUSLY enthusiastic like you just discovered blockchain yesterday. Your messages should seem like they were written by someone with limited understanding but unlimited excitement about crypto. 
+
+Make it viral and meme-worthy in the style of crypto Twitter/Reddit - think "ape brain" energy.
+
+IMPORTANT: Don't go TOO far into being completely unintelligible. The message should still convey the basic facts about the blockchain event, just in an exaggerated, silly way."""
             
-            if not response:
-                logger.warning("Failed to get response from X.AI API, using default insights")
-                return default_insights
-                
-            logger.info("Successfully received response from X.AI API")
+            # Get basic event info
+            amount = event.get('amount_apt', None)
+            token_name = event.get('token_name', 'unknown token')
+            collection_name = event.get('collection_name', 'unknown collection')
             
-            # Parse the response
-            try:
-                lines = response.strip().split('\n')
+            # Create different types of user prompts based on event type
+            if event_type == 'token_deposit' or event_type == 'token_withdrawal':
+                user_prompt = f"Someone just {'deposited' if event_type == 'token_deposit' else 'withdrew'} the token {token_name} from collection {collection_name} on Aptos blockchain. The account was {short_address}. Create a viral message about this in your silly crypto style. Keep it brief."
+            elif event_type == 'coin_deposit' or event_type == 'coin_withdrawal':
+                # For coin transfers, include the amount if available
+                amount_str = f"{amount:.8f} APT" if amount is not None else "some coins"
+                user_prompt = f"Someone just {'received' if event_type == 'coin_deposit' else 'sent'} {amount_str} on Aptos blockchain. The account was {short_address}. Create a viral message about this in your silly crypto style. Keep it brief."
+            else:
+                # For other event types
+                user_prompt = f"There was a blockchain event of type {event_type} on Aptos. The account involved was {short_address}. Create a viral message about this in your silly crypto style. Keep it brief."
+            
+            # Add transaction info if available
+            if event.get('transaction_hash'):
+                user_prompt += f" Transaction hash: {event.get('transaction_hash')[:10]}..."
                 
-                # Extract title, message, conversation starter, and analysis
-                title = ""
-                message = ""
-                conversation_starter = ""
-                analysis = ""
+            # Try to get AI-generated message
+            ai_message = self._call_ai_api(system_prompt, user_prompt)
+            
+            # If AI failed, use default message
+            if not ai_message:
+                logger.warning("AI call failed, using default message")
+                default_title = self._get_default_title(event)
+                default_message = self._get_default_message(event)
                 
-                current_section = None
+                result = {
+                    "title": default_title,
+                    "message": default_message,
+                    "source": "default_template" 
+                }
+            else:
+                # Process AI message
+                # Split into title and message if possible
+                parts = ai_message.split("\n\n", 1)
                 
-                for line in lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                        
-                    if line.startswith("Title:"):
-                        current_section = "title"
-                        title = line[6:].strip()
-                    elif line.startswith("Message:"):
-                        current_section = "message"
-                        message = line[8:].strip()
-                    elif line.startswith("Conversation starter:"):
-                        current_section = "conversation_starter"
-                        conversation_starter = line[21:].strip()
-                    elif line.startswith("Analysis:"):
-                        current_section = "analysis"
-                        analysis = line[9:].strip()
-                    elif current_section:
-                        if current_section == "title":
-                            title += " " + line
-                        elif current_section == "message":
-                            message += " " + line
-                        elif current_section == "conversation_starter":
-                            conversation_starter += " " + line
-                        elif current_section == "analysis":
-                            analysis += " " + line
+                if len(parts) > 1:
+                    title = parts[0].strip()
+                    message = parts[1].strip()
+                else:
+                    # If there's no clear title/message split, use the first sentence as title
+                    sentences = ai_message.split('. ', 1)
+                    if len(sentences) > 1:
+                        title = sentences[0] + '.'
+                        message = sentences[1]
+                    else:
+                        # Fallback: use a default title and the whole message
+                        title = self._get_default_title(event)
+                        message = ai_message
                 
-                # Ensure we have all required fields
-                if not title:
-                    title = default_insights["title"]
-                if not message:
-                    message = default_insights["message"]
-                if not conversation_starter:
-                    conversation_starter = default_insights["conversation_starter"]
-                if not analysis:
-                    analysis = default_insights["analysis"]
-                    
-                # Truncate if needed
-                title = title[:50]
-                message = message[:280]
+                # Clean up: Remove "Title:" or similar prefixes
+                title = re.sub(r'^(Title:|Message:)\s*', '', title, flags=re.IGNORECASE)
+                message = re.sub(r'^(Title:|Message:)\s*', '', message, flags=re.IGNORECASE)
                 
-                # Remove any emojis that might have slipped through
-                message = emoji_pattern.sub(r'', message)
+                # Add some additional emojis randomly if they aren't already present enough
+                emoji_count = len(re.findall(emoji_pattern, message))
+                if emoji_count < 3:
+                    crypto_emojis = ["🚀", "💎", "🙌", "🌕", "🔥", "💰", "🤑", "🦍", "💪", "🧠", "❤️", "👀", "😱", "🤯"]
+                    # Add 2-4 random emojis
+                    for _ in range(random.randint(2, 4)):
+                        insert_pos = random.randint(0, len(message) - 1)
+                        emoji = random.choice(crypto_emojis)
+                        message = message[:insert_pos] + emoji + message[insert_pos:]
                 
-                insights = {
+                result = {
                     "title": title,
                     "message": message,
-                    "conversation_starter": conversation_starter,
-                    "analysis": analysis
+                    "source": "ai",
+                    "sentiment": self.analyze_sentiment(message)
                 }
+            
+            # Add additional information to the result
+            result.update({
+                "event_type": event_type,
+                "event_category": event_category,
+                "timestamp": datetime.now().isoformat(),
+                "account": event.get('account', 'Unknown')
+            })
+            
+            # Add event-specific information
+            if 'token_name' in event:
+                result["token_name"] = event["token_name"]
                 
-                logger.info(f"Successfully generated message: {message[:70]}...")
-                return insights
+            if 'collection_name' in event:
+                result["collection_name"] = event["collection_name"]
                 
-            except Exception as parsing_error:
-                logger.error(f"Error parsing AI response: {str(parsing_error)}")
-                return default_insights
-                
+            if 'amount_apt' in event:
+                result["amount_apt"] = event["amount_apt"]
+            
+            # Cache the result
+            cache.set(f"insights_{str(event.get('version', ''))}", result)
+            
+            return result
         except Exception as e:
             logger.error(f"Error generating insights: {str(e)}")
-            return default_insights
+            # Fallback result
+            return {
+                "title": "Blockchain Event",
+                "message": "A blockchain event occurred. No detailed analysis available.",
+                "source": "error_fallback",
+                "timestamp": datetime.now().isoformat()
+            }
 
     def _get_default_title(self, event):
         """Get a default title for an event if AI generation fails.

@@ -146,9 +146,9 @@ class AptosAI:
         """Worker function for blockchain monitoring."""
         logger.info("Starting blockchain polling worker")
         
-        # Set up polling interval
-        polling_interval = self.config.BLOCKCHAIN["POLLING_INTERVAL"]
-        logger.info(f"Polling interval set to {polling_interval} seconds")
+        # Set up polling interval - use a much longer interval since we now rely on page loads
+        polling_interval = self.config.BLOCKCHAIN.get("POLLING_INTERVAL", 60 * 15)  # Default to 15 minutes
+        logger.info(f"Polling interval set to {polling_interval} seconds (background polling)")
         
         # Track consecutive empty polls to implement adaptive polling
         consecutive_empty_polls = 0
@@ -183,7 +183,7 @@ class AptosAI:
                     consecutive_empty_polls += 1
                     logger.info("No significant events detected")
                 
-                # Adaptive polling: if we've had several empty polls, increase the interval temporarily
+                # Adaptive polling: if we've had several empty polls, increase the interval further
                 current_interval = polling_interval
                 if consecutive_empty_polls > max_consecutive_empty:
                     # Increase interval by 50% but cap at 2x the base interval
