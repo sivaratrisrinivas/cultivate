@@ -2,6 +2,7 @@
 import discord
 import os
 import asyncio
+import aiohttp
 import random
 import re
 from datetime import datetime, timedelta
@@ -504,68 +505,70 @@ class DiscordBot:
                 await message.reply(response["answer"])
     
     async def send_webhook(self, embed, webhook_url):
-        """Send a message via webhook using aiohttp.
+        """Send a message to a Discord webhook.
         
         Args:
-            embed: Discord embed to send
-            webhook_url: URL of the webhook to send to
-        
-        Returns:
-            bool: True if successful, False otherwise
+            embed: The Discord embed to send
+            webhook_url: The webhook URL to send to
         """
         try:
-            import aiohttp
+            # Create a Discord webhook
+            webhook = discord.Webhook.from_url(webhook_url, session=None)
             
-            # Create webhook payload
-            webhook_data = {
-                "embeds": [embed.to_dict()],
-                "username": "Aptos Blockchain Monitor",
-                "content": "🔔 **New Blockchain Event Detected!**"  # Add a text message to make it more visible
-            }
-            
-            logger.info(f"Sending webhook to {webhook_url[:20]}...")
-            
-            # Send webhook using aiohttp
+            # Use an async context manager for the session
             async with aiohttp.ClientSession() as session:
-                async with session.post(webhook_url, json=webhook_data) as response:
-                    status = response.status
-                    logger.info(f"Webhook response status: {status}")
-                    
-                    if status == 204:
-                        logger.info(f"Successfully sent blockchain event via webhook: {embed.title}")
-                        return True
-                    else:
-                        response_text = await response.text()
-                        logger.error(f"Failed to send webhook: HTTP {status}, Response: {response_text}")
-                        return False
-        except Exception as webhook_error:
-            logger.error(f"Error sending via webhook: {str(webhook_error)}")
+                webhook_with_session = discord.Webhook.from_url(webhook_url, session=session)
+                await webhook_with_session.send(embed=embed)
+                
+            logger.info("Webhook message sent successfully")
+            return True
+        except Exception as e:
+            logger.error(f"Error sending webhook: {str(e)}")
             return False
     
     def post_blockchain_event(self, event):
-        """Post a blockchain event to Discord.
+        """Post a blockchain event to the designated Discord channel.
         
         Args:
-            event (dict): Enriched blockchain event data
+            event: The blockchain event to post
+        
+        Returns:
+            bool: True if the event was successfully queued, False otherwise
         """
         try:
+            # Generate a unique event ID based on its content
+            event_id = None
+            if 'version' in event and 'sequence_number' in event:
+                event_id = f"{event['version']}_{event['sequence_number']}"
+            elif 'transaction_version' in event:
+                event_id = f"{event['transaction_version']}"
+            else:
+                # Create a hash of the event data for non-standard events
+                import hashlib
+                event_str = str(sorted(event.items()))
+                event_id = hashlib.md5(event_str.encode()).hexdigest()
+            
+            # Check if we've already posted this event
+            if event_id in self.posted_events:
+                logger.info(f"Skipping duplicate event with ID: {event_id}")
+                return False
+            
+            # Add to posted events set
+            self.posted_events.add(event_id)
+            
+            # Limit the size of posted_events to avoid memory issues
+            if len(self.posted_events) > 1000:
+                # Keep only the most recent 500 events
+                self.posted_events = set(list(self.posted_events)[-500:])
+            
+            # Process event data
             event_category = event.get('event_category', 'unknown')
             logger.info(f"Processing blockchain event for Discord: {event_category}")
             
-            # Generate insights using AI module or use fallback
-            try:
-                insights = self.ai_module.generate_insights(event)
-            except AttributeError as e:
-                logger.warning(f"Error generating insights: {str(e)}, using fallback")
-                # Fallback insights
-                insights = {
-                    "title": self._generate_fallback_title(event),
-                    "message": self._generate_fallback_message(event),
-                    "conversation_starter": "What do you think about this event?",
-                    "analysis": "No detailed analysis available."
-                }
+            # Generate insights using AI module
+            insights = self.ai_module.generate_insights(event)
             
-            # Create Discord embed with a more conversational style
+            # Create Discord embed
             embed = discord.Embed(
                 title=insights["title"],
                 description=insights["message"],
@@ -579,7 +582,10 @@ class DiscordBot:
             # Add token information if available
             if "token_name" in event:
                 embed.add_field(name="Token", value=event["token_name"], inline=True)
-                embed.add_field(name="Collection", value=event.get("collection_name", "Unknown"), inline=True)
+                
+            # Add collection if available
+            if "collection_name" in event:
+                embed.add_field(name="Collection", value=event["collection_name"], inline=True)
                 
             # Add amount for coin transfers
             if "amount_apt" in event:
@@ -588,90 +594,33 @@ class DiscordBot:
             # Add transaction link if available
             if "transaction_url" in event and event["transaction_url"]:
                 embed.add_field(name="Transaction", value=f"[View on Explorer]({event['transaction_url']})", inline=False)
-                
-            # Add the conversation starter as a field
-            conversation_starter = insights.get("conversation_starter", "What do you think about this?")
-            embed.add_field(name="💬 Let's chat!", value=conversation_starter, inline=False)
-                
-            # Add footer with analysis
-            if "analysis" in insights:
-                embed.set_footer(text=insights["analysis"])
             
-            # Try both webhook and direct channel posting for maximum reliability
-            webhook_sent = False
+            # Add conversation starter
+            embed.add_field(name="Let's chat!", value="What do you think about this event?", inline=False)
             
-            # 1. Try webhook first (if configured)
-            webhook_url = self.config.DISCORD_NOTIFICATIONS.get("WEBHOOK_URL")
-            if webhook_url:
-                try:
-                    # Use the bot's event loop if available
-                    if hasattr(self.bot, 'loop') and self.bot.loop and self.bot.loop.is_running():
-                        future = asyncio.run_coroutine_threadsafe(
-                            self.send_webhook(embed, webhook_url), 
-                            self.bot.loop
-                        )
-                        try:
-                            # Wait for the result with a timeout
-                            webhook_sent = future.result(timeout=10)
-                            logger.info(f"Webhook sent: {webhook_sent}")
-                        except Exception as e:
-                            logger.error(f"Error waiting for webhook result: {str(e)}")
-                    else:
-                        # Create a new event loop if the bot's loop is not available
-                        try:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            webhook_sent = loop.run_until_complete(self.send_webhook(embed, webhook_url))
-                            loop.close()
-                            logger.info(f"Webhook sent (new loop): {webhook_sent}")
-                        except Exception as e:
-                            logger.error(f"Error with webhook in new event loop: {str(e)}")
-                except Exception as e:
-                    logger.error(f"Error sending webhook: {str(e)}")
+            # Store the message data instead of directly adding to the queue
+            # This avoids the async loop error when called from non-async contexts
+            message_data = {'embed': embed, 'event_id': event_id}
             
-            # 2. Always try direct channel posting as well
-            try:
-                # Queue the message for posting via bot
-                if hasattr(self.bot, 'loop') and self.bot.loop and self.bot.loop.is_running():
-                    asyncio.run_coroutine_threadsafe(self.message_queue.put(embed), self.bot.loop)
-                    logger.info(f"Queued blockchain event for posting via bot: {event_category}")
-                else:
-                    # If bot loop is not running, try to create a new event loop
-                    try:
-                        loop = asyncio.new_event_loop()
-                        asyncio.set_event_loop(loop)
-                        
-                        # Create a temporary function to send the message directly
-                        async def send_direct():
-                            try:
-                                # Get the channel
-                                channel = self.bot.get_channel(int(self.channel_id))
-                                if channel:
-                                    await channel.send(embed=embed)
-                                    logger.info(f"Sent message directly to channel {self.channel_id}")
-                                    return True
-                                else:
-                                    logger.error(f"Channel with ID {self.channel_id} not found")
-                                    return False
-                            except Exception as e:
-                                logger.error(f"Error sending direct message: {str(e)}")
-                                return False
-                        
-                        # Try to send directly
-                        loop.run_until_complete(send_direct())
-                        loop.close()
-                    except Exception as e:
-                        logger.error(f"Error creating new event loop for direct message: {str(e)}")
-            except Exception as e:
-                logger.error(f"Error queuing message: {str(e)}")
+            # Always use the sync approach to avoid async context issues
+            self._sync_add_to_queue(message_data)
+            logger.info(f"Added event {event_id} to message queue (sync)")
             
-            # 3. If both methods failed, log a warning
-            if not webhook_sent and not hasattr(self.bot, 'loop'):
-                logger.warning("Cannot send message: Discord bot not running and webhook failed")
-                
+            return True
         except Exception as e:
-            logger.error(f"Error in post_blockchain_event: {str(e)}")
-            logger.exception("Full exception details:")
+            logger.error(f"Error posting blockchain event: {str(e)}")
+            return False
+    
+    def _sync_add_to_queue(self, message_data):
+        """Add a message to the queue from a non-async context.
+        
+        Args:
+            message_data: The message data to add to the queue
+        """
+        # Store in a class level list that will be processed by the queue processor
+        if not hasattr(self, '_pending_messages'):
+            self._pending_messages = []
+        self._pending_messages.append(message_data)
     
     def _format_account_link(self, account, account_url):
         """Format an account link for Discord embed.
@@ -716,28 +665,69 @@ class DiscordBot:
     
     @tasks.loop(seconds=5)
     async def process_message_queue(self):
-        """Process the message queue with rate limiting."""
+        """Process messages in the queue with rate limiting."""
+        # First, check if there are any pending messages from non-async contexts
+        if hasattr(self, '_pending_messages') and self._pending_messages:
+            # Get the count before moving
+            pending_count = len(self._pending_messages)
+            
+            # Move pending messages to the async queue
+            for message in self._pending_messages:
+                await self.message_queue.put(message)
+            
+            # Clear the pending messages
+            self._pending_messages = []
+            logger.info(f"Moved {pending_count} pending messages to async queue")
+        
+        # Check if there are any messages to process
+        if self.message_queue.empty():
+            return
+        
+        # Check if we should post a batch now (15-minute interval)
+        current_time = datetime.now()
+        time_since_last_post = (current_time - self.last_post_time).total_seconds() / 60
+        
+        if time_since_last_post < 15:
+            # Not time to post yet
+            return
+        
+        # Time to post! Process events in the queue
         try:
-            if not self.message_queue.empty():
-                # Get message data
-                message_data = await self.message_queue.get()
-                
-                # Get target channel
-                channel = self.bot.get_channel(self.channel_id)
-                if not channel:
-                    logger.error(f"Channel with ID {self.channel_id} not found")
-                    return
-                
-                # Send message
-                await channel.send(embed=message_data)
-                logger.info(f"Posted message to Discord: {message_data.title[:30]}...")
-                
-                # Mark task as done
+            # Get up to 5 messages to post as a batch
+            messages_to_post = []
+            count = 0
+            
+            while not self.message_queue.empty() and count < 5:
+                message = await self.message_queue.get()
+                messages_to_post.append(message)
                 self.message_queue.task_done()
+                count += 1
+            
+            if messages_to_post:
+                # Get channel
+                webhook_url = self.config.DISCORD.get("WEBHOOK_URL", None)
+                channel_id = self.config.DISCORD.get("CHANNEL_ID", None)
                 
-                # Add delay for rate limiting
-                await asyncio.sleep(1)
+                if webhook_url:
+                    # Post each message
+                    for message in messages_to_post:
+                        # Post with webhook
+                        await self.send_webhook(message['embed'], webhook_url)
+                        # Brief delay between messages
+                        await asyncio.sleep(1)
+                elif channel_id:
+                    # Get channel
+                    channel = self.bot.get_channel(int(channel_id))
+                    if channel:
+                        # Post each message
+                        for message in messages_to_post:
+                            await channel.send(embed=message['embed'])
+                            # Brief delay between messages
+                            await asyncio.sleep(1)
                 
+                # Update last post time
+                self.last_post_time = current_time
+                logger.info(f"Posted batch of {len(messages_to_post)} blockchain events to Discord")
         except Exception as e:
             logger.error(f"Error processing message queue: {str(e)}")
     
