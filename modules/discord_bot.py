@@ -576,6 +576,19 @@ class DiscordBot:
                 timestamp=datetime.now()
             )
             
+            # Generate meme image if enabled in config
+            if self.config.AI.get("GENERATE_IMAGES", False):
+                try:
+                    # Use the AI module to generate a meme
+                    meme_data = self.ai_module.generate_meme_for_event(event)
+                    
+                    # Add meme image to embed if available
+                    if meme_data and 'image_url' in meme_data:
+                        embed.set_image(url=meme_data['image_url'])
+                        logger.info(f"Added meme image to Discord message: {meme_data['image_url'][:50]}...")
+                except Exception as meme_error:
+                    logger.error(f"Error generating meme: {str(meme_error)}")
+            
             # Add fields with additional information
             embed.add_field(name="Account", value=self._format_account_link(event.get("account", "Unknown"), event.get("account_url", "")), inline=True)
             

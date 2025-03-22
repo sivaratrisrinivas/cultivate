@@ -430,36 +430,235 @@ class AIModule:
             return base_post
     
     def generate_meme(self, event):
-        """Generate a meme based on a blockchain event."""
-        event_type = event.event_type
+        """Generate a meme image for a blockchain event using X.AI's image generation.
         
-        # Generate meme text using Grok
-        system_prompt = "You are a meme creator specializing in blockchain humor."
-        user_prompt = f"Create a funny meme about {event_type} on the Aptos blockchain. Format: TOP TEXT | BOTTOM TEXT"
-        
-        meme_text = self._call_ai_api(system_prompt, user_prompt)
-        
-        # Parse or use default
+        Args:
+            event: Blockchain event data
+            
+        Returns:
+            dict: Object with meme data including image URL
+        """
         try:
-            top_text, bottom_text = meme_text.split('|')
-            top_text = top_text.strip()
-            bottom_text = bottom_text.strip()
-        except:
-            top_text, bottom_text = self._default_meme_text(event_type)
+            cached_result = cache.get(f"meme_{str(event.get('version', ''))}")
+            if cached_result:
+                logger.info("Using cached meme")
+                return cached_result
+            
+            # Get event category and data
+            event_category = event.get('event_category', 'unknown')
+            event_type = event.get('type', 'unknown')
+            
+            # Create prompt for image generation
+            prompt = self._create_meme_prompt(event)
+            
+            # Call X.AI image generation API
+            image_url = self._generate_image(prompt)
+            
+            if not image_url:
+                logger.warning("Failed to generate meme image, using fallback")
+                # Fallback to a default meme template
+                image_url = "https://via.placeholder.com/800x450?text=Blockchain+Event"
+            
+            # Generate insights to get title and message
+            insights = self.generate_insights(event)
+            
+            # Create meme result
+            result = {
+                "title": insights["title"],
+                "message": insights["message"],
+                "image_url": image_url,
+                "prompt": prompt,
+                "event_type": event_type,
+                "event_category": event_category,
+                "timestamp": datetime.now().isoformat(),
+            }
+            
+            # Cache the result
+            cache.set(f"meme_{str(event.get('version', ''))}", result, ttl=self.config.AI.get("CACHE_DURATION", 3600))
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error generating meme: {str(e)}")
+            # Fallback result
+            return {
+                "title": "Blockchain Event",
+                "message": "A blockchain event occurred.",
+                "image_url": "https://via.placeholder.com/800x450?text=Fallback+Meme",
+                "source": "error_fallback",
+                "timestamp": datetime.now().isoformat()
+            }
+
+    def _create_meme_prompt(self, event):
+        """Create a prompt for meme image generation based on the event.
         
-        # Create meme image
-        template_path = "templates/memes/default.png"
-        meme_image = self._create_meme_image(template_path, top_text, bottom_text)
+        Args:
+            event: Blockchain event data
+            
+        Returns:
+            str: Prompt for image generation
+        """
+        try:
+            event_category = event.get('event_category', 'unknown')
+            event_type = event.get('type', 'unknown')
+            
+            # Base components that can be used in different meme prompts
+            components = {
+                "characters": ["crypto bro", "diamond hands investor", "scared trader", "moon boy", "crypto chad", "wojak", "pepe the frog"],
+                "settings": ["trading desk", "moon surface", "yacht", "lambo", "crypto conference", "to the moon", "rocket ship"],
+                "emotions": ["excited", "scared", "confused", "celebrating", "crying", "shocked"],
+                "styles": ["meme style", "internet meme", "crypto meme", "dank meme", "retro pixel art", "vaporwave", "4chan style", "reddit meme"]
+            }
+            
+            # Select random components
+            character = random.choice(components["characters"])
+            setting = random.choice(components["settings"])
+            emotion = random.choice(components["emotions"])
+            style = random.choice(components["styles"])
+            
+            # Create base prompt
+            base_prompt = f"A {emotion} {character} in a {setting}, {style}, high quality"
+            
+            # Add event-specific details
+            if event_type == "token_deposit" or event_type == "token_withdrawal":
+                token_name = event.get('token_name', 'crypto token')
+                action = "depositing" if event_type == "token_deposit" else "withdrawing"
+                prompt = f"{base_prompt}, {action} {token_name}, blockchain transaction, funny crypto meme"
+                
+            elif event_type == "coin_deposit" or event_type == "coin_withdrawal":
+                amount = event.get('amount_apt', "some coins")
+                action = "receiving" if event_type == "coin_deposit" else "sending"
+                prompt = f"{base_prompt}, {action} {amount} APT coins, cryptocurrency transaction, funny crypto meme"
+                
+            elif event_type == "large_transaction":
+                amount = event.get('amount_apt', "large amount")
+                prompt = f"{base_prompt}, transferring {amount} APT, whale transaction, big money moves, funny crypto meme"
+                
+            elif event_type == "nft_sale":
+                token_name = event.get('token_name', 'NFT')
+                amount = event.get('amount_apt', "some APT")
+                prompt = f"{base_prompt}, buying {token_name} NFT for {amount} APT, NFT purchase, digital art, funny crypto meme"
+                
+            elif event_type == "liquidity_change":
+                pool = event.get('pool_name', 'crypto pool')
+                action = event.get('action', 'changing')
+                prompt = f"{base_prompt}, {action} liquidity in {pool} DeFi pool, crypto trading, funny crypto meme"
+                
+            elif event_type == "price_movement":
+                token = event.get('token_name', 'crypto')
+                direction = event.get('direction', 'moving')
+                prompt = f"{base_prompt}, {token} price {direction}, crypto chart, trading graph, funny crypto meme"
+                
+            else:
+                prompt = f"{base_prompt}, crypto blockchain event, transaction, funny crypto meme"
+            
+            # Add some randomization
+            additions = [
+                "photorealistic", "high detail", "highly detailed", "4k", "trending on social media", 
+                "viral meme", "funny", "absurd", "ridiculous", "over-the-top"
+            ]
+            
+            # Add 2-3 random additions
+            for _ in range(random.randint(2, 3)):
+                addition = random.choice(additions)
+                if addition not in prompt:  # Avoid duplicates
+                    prompt += f", {addition}"
+            
+            return prompt
+        except Exception as e:
+            logger.error(f"Error creating meme prompt: {str(e)}")
+            return "funny crypto meme, blockchain event, viral internet meme"
+
+    def _generate_image(self, prompt):
+        """Generate an image using X.AI's image generation API.
         
-        # Save meme
-        meme_path = f"cache/memes/{event_type}_{datetime.now().timestamp()}.png"
-        meme_image.save(meme_path)
-        
-        return {
-            "text": f"{top_text} {bottom_text}",
-            "image_path": meme_path,
-            "event_reference": f"{event_type}_{datetime.now().isoformat()}"
-        }
+        Args:
+            prompt: Text prompt for image generation
+            
+        Returns:
+            str: URL to the generated image, or None if generation failed
+        """
+        try:
+            # Check rate limits similar to text generation
+            current_time = datetime.now()
+            
+            # Reset daily counter if it's a new day
+            if current_time.date() != self.last_day_reset:
+                self.last_day_reset = current_time.date()
+                self.api_calls_today = 0
+                logger.info("Resetting daily API call counter")
+            
+            # Check if we've exceeded daily limit
+            if self.api_calls_today >= self.config.AI.get("MAX_DAILY_CALLS", 100):
+                logger.warning(f"Daily API call limit exceeded: {self.api_calls_today}/{self.config.AI.get('MAX_DAILY_CALLS', 100)}")
+                return None
+            
+            # Check rate limit within the time period
+            rate_limit_period = self.config.AI.get("RATE_LIMIT_PERIOD", 60)
+            rate_limit_calls = self.config.AI.get("RATE_LIMIT_CALLS", 10)
+            
+            # Remove timestamps older than the rate limit period
+            self.api_call_timestamps = [ts for ts in self.api_call_timestamps 
+                                       if (current_time - ts).total_seconds() < rate_limit_period]
+            
+            # Check if we've exceeded the rate limit
+            if len(self.api_call_timestamps) >= rate_limit_calls:
+                # Find the oldest call in our window and calculate when we can make another request
+                oldest_call = min(self.api_call_timestamps)
+                wait_time = rate_limit_period - (current_time - oldest_call).total_seconds()
+                logger.warning(f"Rate limit reached. Need to wait {wait_time:.1f} seconds for next API call")
+                return None
+            
+            import requests
+            
+            # Prepare the API request for image generation
+            url = f"{self.config.AI.get('API_URL', 'https://api.x.ai/v1')}/images/generations"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.config.AI.get('API_KEY', '')}"
+            }
+            
+            data = {
+                "model": self.config.AI.get("IMAGE_MODEL", "image-model-2"),  # Use appropriate model name from X.AI
+                "prompt": prompt,
+                "n": 1,  # Generate one image
+                "size": "1024x1024",  # Standard size
+                "response_format": "url"  # Get URL in response
+            }
+            
+            # Make the API request with timeout
+            logger.info("Making API request to X.AI for image generation...")
+            response = requests.post(url, headers=headers, json=data, timeout=30)  # Longer timeout for images
+            
+            # Update rate limit tracking
+            self.api_call_timestamps.append(current_time)
+            self.api_calls_today += 1
+            logger.info(f"API call count today: {self.api_calls_today}/{self.config.AI.get('MAX_DAILY_CALLS', 100)}")
+            
+            # Check if the request was successful
+            if response.status_code == 200:
+                response_data = response.json()
+                
+                # Extract the image URL
+                if "data" in response_data and len(response_data["data"]) > 0:
+                    image_url = response_data["data"][0]["url"]
+                    logger.info(f"Successfully generated image: {image_url[:50]}...")
+                    return image_url
+                else:
+                    logger.error("No image data in API response")
+                    return None
+            else:
+                logger.error(f"API request failed with status code {response.status_code}: {response.text}")
+                return None
+                
+        except requests.exceptions.Timeout:
+            logger.error("API request for image generation timed out")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"API request error for image generation: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error in image generation: {str(e)}")
+            return None
     
     def get_answer(self, question):
         """Answer a user question about Aptos."""
@@ -855,3 +1054,35 @@ IMPORTANT: Don't go TOO far into being completely unintelligible. The message sh
             
         else:
             return f"A blockchain event of type {event_category.replace('_', ' ').title()} was detected."
+
+    def generate_meme_for_event(self, event):
+        """Generate a meme for a blockchain event, using the MemeGenerator if available.
+        
+        Args:
+            event: Blockchain event data
+            
+        Returns:
+            dict: Meme data including image URL, or None if meme generation is disabled
+        """
+        try:
+            # Check if meme generation is enabled
+            if not self.config.AI.get("GENERATE_IMAGES", False):
+                logger.info("Meme generation is disabled in config")
+                return None
+                
+            # Try to import the MemeGenerator
+            try:
+                # Only import once
+                if not hasattr(self, '_meme_generator'):
+                    from meme_generator import MemeGenerator
+                    self._meme_generator = MemeGenerator(self.config)
+                    logger.info("Initialized MemeGenerator for image creation")
+                
+                # Generate the meme
+                return self._meme_generator.generate_meme(event)
+            except ImportError:
+                logger.error("Could not import MemeGenerator module")
+                return None
+        except Exception as e:
+            logger.error(f"Error in generate_meme_for_event: {str(e)}")
+            return None
